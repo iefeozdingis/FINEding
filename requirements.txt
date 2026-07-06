@@ -2,4 +2,4 @@ customtkinter
 matplotlib
 openpyxl
 reportlab
-Pillowpip
+Pillow
