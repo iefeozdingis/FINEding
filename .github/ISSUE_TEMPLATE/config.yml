@@ -1,8 +1,5 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
-  - name: 🐛 Hata Bildirimi
-    url: https://github.com/iefeozdingis/FINEding/issues/new?template=bug_report.yml
-    about: Uygulamada bulduğunuz bir hatayı bildirin
-  - name: ✨ Özellik İsteği
-    url: https://github.com/iefeozdingis/FINEding/issues/new?template=feature_request.yml
-    about: Yeni bir özellik veya iyileştirme önerin
+  - name: 📖 Kullanım Kılavuzu
+    url: https://github.com/iefeozdingis/FINEding#readme
+    about: Uygulama kurulumu ve kullanımı için README'ye bakın
