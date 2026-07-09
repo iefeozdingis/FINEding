@@ -41,11 +41,13 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         self.tur = ctk.CTkComboBox(self, width=300, values=["Gelir", "Gider"])
         self.tur.set(islem[2])
         self.tur.pack(pady=8)
+        # Tür değişince kategori listesini güncelle
+        self.tur.configure(command=self._tur_degisti)
 
         self.kategori = ctk.CTkComboBox(
             self,
             width=300,
-            values=self._kategoriler(),
+            values=self._kategoriler(islem[2]),
             button_color="#475569",
             button_hover_color="#334155",
         )
@@ -72,11 +74,28 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
             pady=16
         )
 
-    def _kategoriler(self):
+    def _kategoriler(self, tur=None):
         from ui.gelir import VARSAYILAN_GELIR_KATEGORILER
         from ui.gider import VARSAYILAN_GIDER_KATEGORILER
 
-        return VARSAYILAN_GELIR_KATEGORILER + VARSAYILAN_GIDER_KATEGORILER
+        if tur is None:
+            tur = self.tur.get()
+        if tur == "Gelir":
+            ozel = self.db.kategorileri_getir("Gelir")
+            kategoriler = VARSAYILAN_GELIR_KATEGORILER + [
+                k for k in ozel if k not in VARSAYILAN_GELIR_KATEGORILER
+            ]
+        else:
+            ozel = self.db.kategorileri_getir("Gider")
+            kategoriler = VARSAYILAN_GIDER_KATEGORILER + [
+                k for k in ozel if k not in VARSAYILAN_GIDER_KATEGORILER
+            ]
+        return kategoriler
+
+    def _tur_degisti(self, secim):
+        self.kategori.configure(values=self._kategoriler(secim))
+        varsayilan = self._kategoriler(secim)[0]
+        self.kategori.set(varsayilan)
 
     def kaydet(self):
         # Validate date before updating
