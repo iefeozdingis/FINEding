@@ -1,0 +1,38 @@
+name: ✨ Özellik İsteği
+description: Yeni bir özellik veya iyileştirme önerin
+title: "[ÖZELLİK] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "## ✨ Özellik İsteği\nFikrinizi paylaştığınız için teşekkürler!"
+  - type: textarea
+    id: problem
+    attributes:
+      label: Bu özellik hangi sorunu çözüyor?
+      placeholder: "Şu anda yaşadığınız sorunu açıklayın..."
+    validations:
+      required: true
+  - type: textarea
+    id: cozum
+    attributes:
+      label: Önerdiğiniz Çözüm
+      placeholder: "Nasıl olması gerektiğini açıklayın..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatif
+    attributes:
+      label: Alternatif Çözümler
+      placeholder: "Düşündüğünüz alternatif yaklaşımlar varsa..."
+  - type: dropdown
+    id: oncelik
+    attributes:
+      label: Öncelik
+      options:
+        - Düşük
+        - Orta
+        - Yüksek
+        - Kritik
+    validations:
+      required: true

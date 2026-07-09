@@ -1,33 +1,40 @@
-name: CI Failure Auto Issue
+name: 🤖 Otomatik Issue Yönetimi
 
 on:
   workflow_run:
     workflows: ["CI", "Python Tests"]
     types:
       - completed
+  issues:
+    types: [opened]
+  schedule:
+    - cron: "0 8 * * 1"  # Her Pazartesi sabah 8'de
 
 jobs:
-  create-issue:
-    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+  # ============================================
+  # CI başarısız olursa otomatik issue aç
+  # ============================================
+  create-ci-failure-issue:
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
-      - name: Create Issue
+      - name: CI Başarısız Issue Oluştur
         uses: actions/github-script@v7
         with:
           script: |
             const wf = context.payload.workflow_run;
-            const title = "CI Failed: " + wf.name + " - " + wf.head_branch;
+            const title = "❌ CI Failed: " + wf.name + " - " + wf.head_branch;
             const sha = wf.head_sha.substring(0, 7);
-            const body = "## CI Run Failed\n\n"
-              + "| Detail | Value |\n"
+            const body = "## ❌ CI Çalışması Başarısız\n\n"
+              + "| Detay | Değer |\n"
               + "|--------|-------|\n"
               + "| **Workflow** | " + wf.name + " |\n"
               + "| **Branch** | `" + wf.head_branch + "` |\n"
               + "| **Commit** | `" + sha + "` |\n"
-              + "| **Run** | [View](" + wf.html_url + ") |\n"
-              + "\nCI pipeline failed. Please check the run details.";
+              + "| **Çalışma** | [Görüntüle](" + wf.html_url + ") |\n"
+              + "\n⚠️ CI pipeline başarısız oldu. Lütfen çalışma detaylarını kontrol edin.";
 
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -41,7 +48,7 @@ jobs:
             });
 
             if (dup) {
-              console.log("Duplicate issue: #" + dup.number);
+              console.log("Zaten açık issue var: #" + dup.number);
               return;
             }
 
@@ -53,4 +60,91 @@ jobs:
               labels: ["ci-failure", "bug"],
             });
 
-            console.log("Issue created.");
+            console.log("CI başarısız issue oluşturuldu.");
+
+  # ============================================
+  # Yeni issue'lara otomatik etiket ve atama
+  # ============================================
+  auto-label:
+    if: ${{ github.event_name == 'issues' && github.event.action == 'opened' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Otomatik Etiketle ve Hoş Geldin Mesajı
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+
+            // Etiket kontrolü: eğer etiket yoksa triage ekle
+            if (!issue.labels || issue.labels.length === 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ["triage"],
+              });
+            }
+
+            // Hoş geldin yorumu
+            const welcome = "👋 Merhaba @" + issue.user.login + "!\n\n"
+              + "Sorun bildiriminiz için teşekkürler. En kısa sürede incelenecektir.\n\n"
+              + "Bu arada:\n"
+              + "- 📋 Varsa ekran görüntüsü veya log ekleyin\n"
+              + "- 🔄 Güncel sürümü kullandığınızdan emin olun\n"
+              + "- 📖 [README](https://github.com/"
+              + context.repo.owner + "/" + context.repo.repo + "#readme) kısmına göz atın";
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: welcome,
+            });
+
+            console.log("Issue #" + issue.number + " etiketlendi ve yorum eklendi.");
+
+  # ============================================
+  # Haftalık etiketsiz issue hatırlatıcısı
+  # ============================================
+  stale-reminder:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Etiketsiz Issue'ları Kontrol Et
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "triage",
+              per_page: 100,
+            });
+
+            if (issues.length === 0) {
+              console.log("Etiketsiz issue yok, her şey temiz! ✅");
+              return;
+            }
+
+            for (const issue of issues) {
+              const days = Math.floor(
+                (Date.now() - new Date(issue.created_at).getTime()) / (1000 * 60 * 60 * 24)
+              );
+
+              if (days >= 7) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: "⏰ Bu issue " + days + " gündür etiketsiz bekliyor. "
+                    + "Lütfen inceler misiniz? @iefeozdingis",
+                });
+              }
+            }
+
+            console.log(issues.length + " etiketsiz issue kontrol edildi.");

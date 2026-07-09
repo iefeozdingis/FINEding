@@ -1,0 +1,49 @@
+name: 🐛 Hata Bildirimi
+description: Uygulamada bulduğunuz bir hatayı bildirin
+title: "[BUG] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "## 🐛 Hata Bildirimi\nLütfen aşağıdaki bilgileri eksiksiz doldurun."
+  - type: input
+    id: version
+    attributes:
+      label: Versiyon
+      placeholder: "örn: v1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: ortam
+    attributes:
+      label: Ortam
+      options:
+        - Windows 10
+        - Windows 11
+        - Diğer
+    validations:
+      required: true
+  - type: textarea
+    id: aciklama
+    attributes:
+      label: Hata Açıklaması
+      placeholder: "Hatayı detaylıca açıklayın..."
+    validations:
+      required: true
+  - type: textarea
+    id: adimlar
+    attributes:
+      label: Tekrarlama Adımları
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: beklenen
+    attributes:
+      label: Beklenen Davranış
+      placeholder: "Ne olması gerekiyordu?"
+  - type: textarea
+    id: ekran
+    attributes:
+      label: Ekran Görüntüsü / Log
+      placeholder: "Varsa ekran görüntüsü veya hata logu ekleyin"
