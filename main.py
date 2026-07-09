@@ -311,28 +311,27 @@ class FinedingApp(ctk.CTk):
     def _guvenli_gecis(self, sayfa_sinifi, **kwargs):
         """Sayfa değiştir - öncekini yok et, yenisini oluştur."""
         # Önceki zamanlanmış geçişi iptal et
-        if hasattr(self, "_gecis_after_id"):
+        if hasattr(self, "_gecis_after_id") and self._gecis_after_id is not None:
             self.after_cancel(self._gecis_after_id)
+            self._gecis_after_id = None
 
+        # Mevcut sayfayı temizle
         try:
             for widget in list(self.content.winfo_children()):
                 widget.destroy()
         except Exception:
             pass
 
-        def _olustur():
+        # Yeni sayfayı hemen oluştur
+        try:
+            sayfa = sayfa_sinifi(self.content, self.db, **kwargs)
+            sayfa.grid(row=0, column=0, sticky="nsew")
+        except Exception as e:
+            logger.error(f"Sayfa hatası: {sayfa_sinifi.__name__} - {e}")
             try:
-                sayfa = sayfa_sinifi(self.content, self.db, **kwargs)
-                sayfa.grid(row=0, column=0, sticky="nsew")
-            except Exception as e:
-                logger.error(f"Sayfa hatası: {sayfa_sinifi.__name__} - {e}")
-                try:
-                    self.dashboard_ac()
-                except Exception:
-                    pass
-            self._gecis_after_id = None
-
-        self._gecis_after_id = self.after(10, _olustur)
+                Dashboard(self.content, self.db).grid(row=0, column=0, sticky="nsew")
+            except Exception:
+                pass
 
     # =====================================
     # DASHBOARD
