@@ -9,17 +9,18 @@ class HakkindaSayfasi(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        kart = ctk.CTkFrame(
+        # Scrollable kart
+        kart = ctk.CTkScrollableFrame(
             self,
             corner_radius=20,
             fg_color="#134e4a",
             border_width=1,
             border_color="#14b8a6",
         )
-        kart.pack(pady=40, padx=60, fill="both", expand=True)
+        kart.pack(pady=30, padx=60, fill="both", expand=True)
 
         # Logo
-        ctk.CTkLabel(kart, text="�", font=("Segoe UI Emoji", 60)).pack(pady=(30, 5))
+        ctk.CTkLabel(kart, text="💎", font=("Segoe UI Emoji", 60)).pack(pady=(30, 5))
 
         ctk.CTkLabel(
             kart, text="Fineding", font=("Segoe UI", 28, "bold"), text_color="#5eead4"

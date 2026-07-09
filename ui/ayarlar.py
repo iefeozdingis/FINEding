@@ -75,7 +75,7 @@ class AyarlarSayfasi(ctk.CTkFrame):
 
         ctk.CTkButton(
             kart,
-            text="� Profil Düzenle",
+            text="👤 Profil Düzenle",
             width=220,
             fg_color="#0ea5e9",
             command=self._profil_duzenle,
@@ -85,7 +85,7 @@ class AyarlarSayfasi(ctk.CTkFrame):
 
         ctk.CTkButton(
             kart,
-            text="�🔒 Şifre Değiştir",
+            text="🔒 Şifre Değiştir",
             width=220,
             fg_color="#6366f1",
             command=self._sifre_degistir,

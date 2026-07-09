@@ -374,6 +374,144 @@ class Dashboard(ctk.CTkFrame):
         )
         self.btn_toplu_sil.pack(side="left", padx=8)
 
+        # ==========================
+        # Dışa Aktar Butonları (Rapor birleştirildi)
+        # ==========================
+        export_frame = ctk.CTkFrame(tablo_frame, fg_color="transparent")
+        export_frame.pack(pady=(5, 5))
+
+        ctk.CTkLabel(
+            export_frame,
+            text="📤 Dışa Aktar:",
+            font=("Segoe UI", 12),
+            text_color="#94a3b8",
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            export_frame,
+            text="CSV",
+            width=70,
+            height=28,
+            font=("Segoe UI", 11),
+            fg_color="#475569",
+            command=self._csv_aktar,
+        ).pack(side="left", padx=3)
+
+        ctk.CTkButton(
+            export_frame,
+            text="Excel",
+            width=70,
+            height=28,
+            font=("Segoe UI", 11),
+            fg_color="#166534",
+            command=self._excel_aktar,
+        ).pack(side="left", padx=3)
+
+        ctk.CTkButton(
+            export_frame,
+            text="PDF",
+            width=70,
+            height=28,
+            font=("Segoe UI", 11),
+            fg_color="#991b1b",
+            command=self._pdf_aktar,
+        ).pack(side="left", padx=3)
+
+    # ==========================
+    # Dışa Aktar Metotları
+    # ==========================
+
+    def _csv_aktar(self):
+        from tkinter import filedialog, messagebox
+        import csv
+
+        yol = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV", "*.csv")]
+        )
+        if not yol:
+            return
+        try:
+            with open(yol, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar"])
+                for satir in self.db.islem_ara():
+                    writer.writerow(satir)
+            messagebox.showinfo("Başarılı", f"CSV dışa aktarıldı:\n{yol}")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _excel_aktar(self):
+        from tkinter import filedialog, messagebox
+
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            messagebox.showerror("Hata", "openpyxl kütüphanesi gerekli.")
+            return
+
+        yol = filedialog.asksaveasfilename(
+            defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")]
+        )
+        if not yol:
+            return
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "İşlemler"
+            ws.append(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar"])
+            for satir in self.db.islem_ara():
+                ws.append(list(satir))
+            wb.save(yol)
+            messagebox.showinfo("Başarılı", f"Excel dışa aktarıldı:\n{yol}")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _pdf_aktar(self):
+        from tkinter import filedialog, messagebox
+
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib.units import mm
+            from reportlab.platypus import (
+                Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+            )
+        except ImportError:
+            messagebox.showerror("Hata", "reportlab kütüphanesi gerekli.")
+            return
+
+        yol = filedialog.asksaveasfilename(
+            defaultextension=".pdf", filetypes=[("PDF", "*.pdf")]
+        )
+        if not yol:
+            return
+        try:
+            doc = SimpleDocTemplate(yol, pagesize=A4, topMargin=20 * mm)
+            styles = getSampleStyleSheet()
+            elemanlar = []
+            elemanlar.append(Paragraph("FINEding — İşlem Raporu", styles["Title"]))
+            elemanlar.append(Spacer(1, 10 * mm))
+
+            veri = [["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar"]]
+            for satir in self.db.islem_ara():
+                veri.append([str(s) for s in satir])
+
+            tablo = Table(veri)
+            tablo.setStyle(
+                TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ])
+            )
+            elemanlar.append(tablo)
+            doc.build(elemanlar)
+            messagebox.showinfo("Başarılı", f"PDF dışa aktarıldı:\n{yol}")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
     # ==========================
     # Seçili İşlemi Sil
     # ==========================

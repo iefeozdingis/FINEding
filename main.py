@@ -222,8 +222,7 @@ class FinedingApp(ctk.CTk):
             ("💰", "Gelir Ekle", "Ctrl+N", self.gelir_ac),
             ("💸", "Gider Ekle", "Ctrl+Shift+N", self.gider_ac),
             ("📊", "Grafikler", "Ctrl+Shift+G", self.grafikler_ac),
-            ("📄", "Raporlar", "Ctrl+R", self.raporlar_ac),
-            ("📅", "Bütçe", "Ctrl+B", self.butce_ac),
+            ("", "Bütçe", "Ctrl+B", self.butce_ac),
             ("📋", "Planlama & Takip", "Ctrl+P", self.planlama_ac),
         ]
 
@@ -248,7 +247,6 @@ class FinedingApp(ctk.CTk):
         self.bind_all("<Control-n>", lambda e: self.gelir_ac())
         self.bind_all("<Control-N>", lambda e: self.gider_ac())
         self.bind_all("<Control-G>", lambda e: self.grafikler_ac())
-        self.bind_all("<Control-r>", lambda e: self.raporlar_ac())
         self.bind_all("<Control-b>", lambda e: self.butce_ac())
         self.bind_all("<Control-p>", lambda e: self.planlama_ac())
         self.bind_all("<Control-comma>", lambda e: self.ayarlar_ac())
