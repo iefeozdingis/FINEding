@@ -150,6 +150,64 @@ class DatabaseTests(unittest.TestCase):
         sonuc = self.db.islem_ara()
         self.assertEqual(len(sonuc), 2)
 
+    def test_bcrypt_hash(self):
+        """Bcrypt hash'leme ve doğrulama testi."""
+        from database import _sifre_hashla, _sifre_dogrula
+        sifre = "test123"
+        hash_deger = _sifre_hashla(sifre)
+        self.assertTrue(hash_deger.startswith("$2b$") or len(hash_deger) == 64)
+        self.assertTrue(_sifre_dogrula(sifre, hash_deger))
+        self.assertFalse(_sifre_dogrula("yanlis", hash_deger))
+
+    def test_islem_log(self):
+        """CRUD işlemlerinin log'a kaydedildiğini test et."""
+        self.db.gelir_ekle("05.07.2026", "Maaş", "Log test", 500)
+        self.db.gider_ekle("05.07.2026", "Market", "Log test", 100)
+
+        cur = self.db.conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM islem_log")
+        self.assertGreaterEqual(cur.fetchone()[0], 2)
+
+    def test_tekrarlayan(self):
+        """Tekrarlayan işlem ekleme/listeleme/silme testi."""
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev kirası", 3000, 1)
+        self.db.tekrarlayan_ekle("Gelir", "Maaş", "", 15000, 1)
+
+        liste = self.db.tekrarlayan_listele()
+        self.assertEqual(len(liste), 2)
+        tutarlar = {t["tutar"] for t in liste}
+        self.assertIn(3000.0, tutarlar)
+        self.assertIn(15000.0, tutarlar)
+
+        # Aktif/Deaktif
+        self.db.tekrarlayan_toggle(liste[1]["id"])
+        liste2 = self.db.tekrarlayan_listele()
+        self.assertEqual(liste2[1]["aktif"], 0)
+
+        # Sil
+        self.db.tekrarlayan_sil(liste[0]["id"])
+        self.assertEqual(len(self.db.tekrarlayan_listele()), 1)
+
+    def test_gunluk_haftalik(self):
+        """Günlük ve haftalık filtre testi."""
+        from datetime import date
+        bugun = date.today().strftime("%d.%m.%Y")
+        self.db.gelir_ekle(bugun, "Maaş", "Bugün", 1000)
+
+        gunluk = self.db.gunluk_islemler()
+        self.assertGreaterEqual(len(gunluk), 1)
+
+        haftalik = self.db.haftalik_islemler()
+        self.assertGreaterEqual(len(haftalik), 1)
+
+    def test_aylik_karsilastirma(self):
+        """Aylık karşılaştırma testi."""
+        self.db.gelir_ekle("05.07.2026", "Maaş", "Test", 5000)
+        kars = self.db.aylik_karsilastirma()
+        self.assertIn("bu_ay", kars)
+        self.assertIn("gecen_ay", kars)
+        self.assertGreaterEqual(kars["bu_ay"]["gelir"], 5000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

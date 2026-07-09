@@ -430,13 +430,6 @@ class FinedingApp(ctk.CTk):
         self._guvenli_gecis(GiderSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
-    # RAPORLAR
-    # =====================================
-
-    def raporlar_ac(self):
-        self._guvenli_gecis(RaporlarSayfasi, dashboard_callback=self.dashboard_ac)
-
-    # =====================================
     # BÜTÇE
     # =====================================
 
