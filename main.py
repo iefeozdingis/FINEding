@@ -8,6 +8,7 @@ from PIL import Image as PILImage
 
 from database import Database
 from ui.ayarlar import AyarlarSayfasi
+from ui.bakiye_widget import BakiyeWidget
 from ui.butce import ButceSayfasi
 from ui.dashboard import Dashboard
 from ui.gelir import GelirSayfasi
@@ -21,6 +22,10 @@ from ui.raporlar import RaporlarSayfasi
 # Loglama
 log_dir = Path(__file__).parent / "logs"
 log_dir.mkdir(exist_ok=True)
+
+# Crash log handler
+crash_log = log_dir / f"crash_{datetime.now().strftime('%Y%m%d')}.log"
+
 logging.basicConfig(
     filename=log_dir / f"app_{datetime.now().strftime('%Y%m%d')}.log",
     level=logging.INFO,
@@ -28,6 +33,21 @@ logging.basicConfig(
     encoding="utf-8",
 )
 logger = logging.getLogger(__name__)
+
+
+def _global_exception_handler(exc_type, exc_val, exc_tb):
+    """Yakalanmayan hataları crash log'a yazar."""
+    import traceback
+    with open(crash_log, "a", encoding="utf-8") as f:
+        f.write(f"\n{'='*60}\n")
+        f.write(f"CRASH: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"{'='*60}\n")
+        traceback.print_exception(exc_type, exc_val, exc_tb, file=f)
+    logger.critical("Uygulama çöktü!", exc_info=(exc_type, exc_val, exc_tb))
+
+
+import sys
+sys.excepthook = _global_exception_handler
 
 ctk.set_default_color_theme(
     str(Path(__file__).parent / "assets" / "fineding_theme.json")
@@ -299,6 +319,25 @@ class FinedingApp(ctk.CTk):
         )
         self.tema_btn.pack(fill="x")
 
+        # Bakiye widget toggle
+        widget_frame = ctk.CTkFrame(self.menu, fg_color="transparent")
+        widget_frame.pack(fill="x", padx=10, pady=3, side="bottom")
+        self.widget_btn = ctk.CTkButton(
+            widget_frame,
+            text="  💰  Bakiye Widget",
+            font=("Segoe UI", 12),
+            height=36,
+            anchor="w",
+            fg_color="transparent",
+            hover_color="#0d9488",
+            text_color="#cbd5e1",
+            corner_radius=10,
+            command=self._widget_toggle,
+        )
+        self.widget_btn.pack(fill="x")
+        self._widget_acik = False
+        self._widget_thread = None
+
         # Klavye kısayolları
         self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
         self.bind_all("<Control-n>", lambda e: self.gelir_ac())
@@ -507,6 +546,16 @@ class FinedingApp(ctk.CTk):
         else:
             ctk.set_appearance_mode("Dark")
             self.tema_btn.configure(text="  🌙  Karanlık Tema")
+
+    def _widget_toggle(self):
+        """Bakiye widget'ını aç/kapat."""
+        if self._widget_acik:
+            self._widget_acik = False
+            self.widget_btn.configure(text="  💰  Bakiye Widget", fg_color="transparent")
+        else:
+            self._widget_acik = True
+            self.widget_btn.configure(text="  💰  Widget Açık", fg_color="#0d9488")
+            BakiyeWidget.baslat(self.db)
 
     def hesap_degistir(self):
         """Oturumu kapatıp giriş ekranına dön."""
