@@ -1,53 +1,208 @@
-# 💎 FINEding — Kişisel Finans Yönetimi
+# 💎 FINEding — Akıllı Kişisel Finans Yönetimi
 
-Modern ve kullanıcı dostu bir kişisel gelir-gider takip uygulaması.  
-CustomTkinter ile geliştirilmiş, karanlık tema destekli masaüstü uygulaması.
+<div align="center">
 
----
+**Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
-## ✨ Özellikler
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
+[![Tests](https://img.shields.io/badge/Tests-7%2F7%20✅-green)](tests/)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
-| Kategori | Detay |
-|---|---|
-| 💰 **Gelir & Gider** | Gelir ve gider kayıtlarını ekle, düzenle, sil |
-| 📊 **Dashboard** | Toplam gelir, gider, bakiye ve işlem sayısını tek ekranda gör |
-| 📅 **Bütçe Yönetimi** | Kategori bazlı aylık bütçe belirle, aşım uyarıları al |
-| 📋 **Planlama** | Gelecek ay planlaması, borç & alacak takibi |
-| 📈 **Grafikler** | Aylık gelir/gider grafikleri, pasta grafiklerle kategori dağılımı |
-| 📄 **Raporlar** | CSV, Excel ve PDF formatında dışa aktarım |
-| 🔐 **Çok Kullanıcılı** | Her kullanıcı kendi hesabıyla giriş yapar |
-| 👑 **Admin Paneli** | Admin kullanıcıları yönetir, şifre sıfırlar |
-| 🔔 **Bildirimler** | Borç vadesi yaklaşınca masaüstü bildirimi |
-| ⬇️ **Sistem Tepsisi** | Kapatınca arka planda çalışır, tepsi simgesinden eriş |
-| 🗂 **Yedekleme** | Veritabanı yedekleme ve geri yükleme |
+</div>
 
 ---
 
-## 🚀 Kurulum
+## 🎯 Neden FINEding?
+
+Harcamalarını kontrol etmek, bütçeni yönetmek ve finansal hedeflerine ulaşmak ister misin?  
+FINEding, tüm gelir-gider takibini **tek bir şık arayüzde**, **ücretsiz** ve **reklamsız** olarak sunar.
+
+> 💡 *"Paranı yönet, hayatını yönet."*
+
+---
+
+## ✨ Tüm Özellikler
+
+### 📊 Dashboard
+- **4 özet kartı**: Toplam Gelir, Gider, Bakiye, İşlem Sayısı
+- **Bütçe ilerleme çubukları**: Kategori bazlı renkli progress bar (🟢🟡🔴)
+- **Akıllı uyarılar**: Bütçe aşımı ve yaklaşan limit bildirimleri
+- **Hızlı işlem**: 💰 +Gelir / 💸 +Gider popup (tutar yaz, Enter'la)
+- **Günlük/Haftalık filtre**: "Bugün", "Bu Hafta", "Tümü" butonları
+- **Arama & filtreleme**: Kategori, açıklama veya tutara göre anlık arama
+- **Dışa aktar**: Tek tıkla CSV 📄, Excel 📗, PDF 📕
+
+### 💰 Gelir & Gider Yönetimi
+- Gelir/gider kaydı ekle, düzenle, sil, geri al
+- Kategori bazlı işlem takibi (özel kategori eklenebilir)
+- Toplu silme (Ctrl+seçim)
+- Tarih otomatik formatlama (GG.AA.YYYY)
+
+### 📅 Bütçe & Planlama
+- **Aylık bütçe**: Kategori başına limit belirle
+- **Bütçe ilerleme çubukları**: Dashboard'da görsel takip
+- **Aylık planlama**: Gelecek ay gelir/gider tahmini
+- **Borç & Alacak takibi**: Kimden, ne kadar, vadesi ne zaman?
+- **🔄 Tekrarlayan işlemler**: Kira, fatura gibi düzenli ödemeleri her ay otomatik ekler
+
+### 📈 Grafikler & Analiz
+- **Aylık gelir/gider çubuk grafiği**
+- **Kategori dağılımı pasta grafikleri** (Gelir + Gider)
+- **📊 Bu Ay vs Geçen Ay** karşılaştırma grafiği
+- Matplotlib ile profesyonel görselleştirme
+
+### 🔐 Çok Kullanıcılı Sistem
+- Her kullanıcı kendi hesabıyla giriş yapar
+- **Admin paneli**: Kullanıcı yönetimi, şifre sıfırlama, kullanıcı silme
+- Şifreler SHA-256 + salt ile hash'lenir
+- "Beni Hatırla" özelliği
+
+### 🎨 Arayüz
+- **🌓 Aydınlık/Karanlık tema**: Sidebar'dan tek tıkla değiştir
+- CustomTkinter ile modern, responsive tasarım
+- Teal ( #0f766e ) renk teması
+- Klavye kısayolları (Ctrl+D Dashboard, Ctrl+N Gelir, vb.)
+- Emoji ikonları ile zengin görsel deneyim
+
+### 🛡️ Sistem Özellikleri
+- **🔔 Masaüstü bildirimleri**: Borç vadesi yaklaşınca uyarı
+- **⬇️ Sistem tepsisi**: Kapatınca arka planda çalışır
+- **💾 Otomatik yedekleme**: Uygulama kapanırken `backups/` altına yedekler (son 10 tutulur)
+- **🗂 Manuel yedekleme**: İstediğin zaman yedek al, geri yükle
+- SHA-256 checksum ile yedek bütünlük kontrolü
+
+---
+
+## 🚀 Hızlı Başlangıç
 
 ### Gereksinimler
-- Python 3.10+
-- Windows işletim sistemi
+- **Python 3.10+** ([python.org](https://python.org))
+- **Windows 10/11**
 
-### Adımlar
-
+### Tek Tıkla Kurulum (Yeni Kullanıcılar)
 ```bash
-# 1. Projeyi klonla
-git clone https://github.com/kullanici/FINEding.git
+# Projeyi indir, KURULUM.bat'a çift tıkla — her şeyi otomatik yapar!
+```
+
+### Manuel Kurulum
+```bash
+git clone https://github.com/iefeozdingis/FINEding.git
 cd FINEding
-
-# 2. Sanal ortam oluştur
 python -m venv .venv
-
-# 3. Sanal ortamı aktif et
 .venv\Scripts\activate
-
-# 4. Bağımlılıkları kur
 pip install -r requirements.txt
-
-# 5. Uygulamayı başlat
 python main.py
 ```
+
+### Varsayılan Giriş
+| Kullanıcı | Şifre |
+|-----------|-------|
+| `admin` | `12345` |
+
+---
+
+## ⌨️ Klavye Kısayolları
+
+| Kısayol | Sayfa |
+|---------|-------|
+| `Ctrl+D` | Dashboard |
+| `Ctrl+N` | Gelir Ekle |
+| `Ctrl+Shift+N` | Gider Ekle |
+| `Ctrl+Shift+G` | Grafikler |
+| `Ctrl+B` | Bütçe |
+| `Ctrl+P` | Planlama |
+| `Ctrl+,` | Ayarlar |
+| `Ctrl+Q` | Çıkış |
+
+---
+
+## 🧪 Testler
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+```
+✅ test_borclar
+✅ test_budget_status_summary
+✅ test_planlama
+✅ test_search
+✅ test_transaction_update_budget_and_settings
+✅ test_undo
+✅ test_user_authentication
+─────────────────────────
+7 tests — ALL OK
+```
+
+---
+
+## 🗂 Proje Yapısı
+
+```
+FINEding/
+├── main.py              # Uygulama ana giriş + tema + menü
+├── database.py           # SQLite veritabanı katmanı
+├── requirements.txt      # Bağımlılıklar
+├── KURULUM.bat           # 🆕 Tek tıkla kurulum
+├── run_finans_defterim.bat  # Başlatıcı
+├── ui/
+│   ├── dashboard.py      # Ana dashboard (kartlar + tablo + filtre + ihracat)
+│   ├── gelir.py          # Gelir ekleme sayfası
+│   ├── gider.py          # Gider ekleme sayfası
+│   ├── butce.py          # Bütçe yönetimi
+│   ├── planlama.py       # Planlama + borç/alacak + tekrarlayan işlemler
+│   ├── grafikler.py      # Grafikler ve aylık karşılaştırma
+│   ├── raporlar.py       # Rapor/dışa aktarım (yedek)
+│   ├── ayarlar.py        # Ayarlar + admin paneli
+│   ├── giris.py          # Giriş/kayıt ekranı
+│   ├── hakkinda.py       # Hakkında sayfası
+│   └── utils.py          # Tarih/para formatlama yardımcıları
+├── tests/
+│   └── test_database.py  # 7 birim testi
+├── database/             # SQLite veritabanı
+├── backups/              # Otomatik yedekler
+├── logs/                 # Uygulama logları
+└── assets/               # İkon ve tema dosyaları
+```
+
+---
+
+## 🛠 Teknoloji Stack'i
+
+| Katman | Teknoloji |
+|--------|----------|
+| Arayüz | CustomTkinter |
+| Grafik | Matplotlib |
+| Veritabanı | SQLite3 |
+| Rapor | ReportLab (PDF), openpyxl (Excel) |
+| Bildirim | Plyer |
+| Sistem Tepsisi | Pystray |
+
+---
+
+## 📝 Geliştirici Notları
+
+- **Commit Convention:** `fix:`, `feat:`, `chore:`, `style:`, `test:`
+- **Issue sistemi:** Bug bildirimi ve özellik isteği şablonları mevcut
+- **CI/CD:** GitHub Actions ile otomatik test + lint
+- **Auto-issue:** CI başarısız olursa otomatik bug issue'su oluşturur
+
+---
+
+## 📄 Lisans
+
+MIT — Dilediğin gibi kullan, değiştir, paylaş.
+
+---
+
+<div align="center">
+
+**⭐ Bu projeyi beğendiysen yıldız vermeyi unutma!**
+
+[![Star History Chart](https://img.shields.io/github/stars/iefeozdingis/FINEding?style=social)](https://github.com/iefeozdingis/FINEding)
+
+</div>
 
 ### Tek Tıkla Çalıştırma
 `run_finans_defterim.bat` dosyasına çift tıklayarak uygulamayı doğrudan başlatabilirsin.
