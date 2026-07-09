@@ -24,7 +24,15 @@ class GrafiklerSayfasi(ctk.CTkFrame):
             width=200,
             fg_color="#0d9488",
             command=self._grafik_ciz,
-        ).pack()
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="📊 Bu Ay vs Geçen Ay",
+            width=180,
+            fg_color="#6366f1",
+            command=self._aylik_karsilastirma_ciz,
+        ).pack(side="left", padx=5)
 
         self._grafik_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._grafik_frame.pack(fill="both", expand=True, padx=20, pady=10)
@@ -95,3 +103,40 @@ class GrafiklerSayfasi(ctk.CTkFrame):
             data["Gelir"][ay] = gelir
             data["Gider"][ay] = gider
         return data
+
+    def _aylik_karsilastirma_ciz(self):
+        """Bu ay vs geçen ay karşılaştırma grafiği."""
+        for widget in self._grafik_frame.winfo_children():
+            widget.destroy()
+
+        kars = self.db.aylik_karsilastirma()
+        bu = kars["bu_ay"]
+        gecen = kars["gecen_ay"]
+
+        fig = Figure(figsize=(8, 5), dpi=100)
+        ax = fig.add_subplot(111)
+
+        kategoriler = ["Gelir", "Gider"]
+        bu_deger = [bu["gelir"], bu["gider"]]
+        gecen_deger = [gecen["gelir"], gecen["gider"]]
+
+        x = range(len(kategoriler))
+        w = 0.35
+        ax.bar([i - w / 2 for i in x], bu_deger, w, color="#14b8a6", label=f"Bu Ay ({bu['ay']:02d}/{bu['yil']})")
+        ax.bar([i + w / 2 for i in x], gecen_deger, w, color="#475569", label=f"Geçen Ay ({gecen['ay']:02d}/{gecen['yil']})")
+        ax.set_xticks(x)
+        ax.set_xticklabels(kategoriler)
+        ax.set_ylabel("₺")
+        ax.set_title("📊 Bu Ay vs Geçen Ay")
+        ax.legend()
+
+        # Değerleri barların üstüne yaz
+        for i, v in enumerate(bu_deger):
+            ax.text(i - w / 2, v + 50, f"{v:,.0f}", ha="center", fontsize=9)
+        for i, v in enumerate(gecen_deger):
+            ax.text(i + w / 2, v + 50, f"{v:,.0f}", ha="center", fontsize=9)
+
+        fig.tight_layout()
+        canvas = FigureCanvasTkAgg(fig, master=self._grafik_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)

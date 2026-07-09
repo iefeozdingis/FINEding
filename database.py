@@ -76,6 +76,11 @@ class Database:
 
         )
         """)
+        # Etiket sütunu (önceden yoksa ekle)
+        try:
+            self.cursor.execute("ALTER TABLE islemler ADD COLUMN etiketler TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # Zaten varsa geç
 
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS butceler(
@@ -131,6 +136,19 @@ class Database:
         )
         """)
 
+        # Tekrarlayan işlemler
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tekrarlayan(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tur TEXT NOT NULL,
+            kategori TEXT NOT NULL,
+            aciklama TEXT,
+            tutar REAL NOT NULL,
+            gun INTEGER NOT NULL,
+            aktif INTEGER NOT NULL DEFAULT 1
+        )
+        """)
+
         # İlk kullanıcı otomatik admin olur (ID=1)
 
         self.conn.commit()
@@ -140,18 +158,19 @@ class Database:
     # ==========================
 
     def gelir_ekle(
-        self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float
+        self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float,
+        etiketler: str = ""
     ) -> None:
         tarih_iso = normalize_date(tarih)
         self.cursor.execute(
             """
         INSERT INTO islemler
-        (tarih,tur,kategori,aciklama,tutar)
+        (tarih,tur,kategori,aciklama,tutar,etiketler)
 
-        VALUES (?,?,?,?,?)
+        VALUES (?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gelir", kategori, aciklama, tutar),
+            (tarih_iso, "Gelir", kategori, aciklama, tutar, etiketler),
         )
 
         self.conn.commit()
@@ -161,18 +180,19 @@ class Database:
     # ==========================
 
     def gider_ekle(
-        self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float
+        self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float,
+        etiketler: str = ""
     ) -> None:
         tarih_iso = normalize_date(tarih)
         self.cursor.execute(
             """
         INSERT INTO islemler
-        (tarih,tur,kategori,aciklama,tutar)
+        (tarih,tur,kategori,aciklama,tutar,etiketler)
 
-        VALUES (?,?,?,?,?)
+        VALUES (?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gider", kategori, aciklama, tutar),
+            (tarih_iso, "Gider", kategori, aciklama, tutar, etiketler),
         )
 
         self.conn.commit()
@@ -507,10 +527,12 @@ class Database:
             return False
         try:
             self.cursor.execute("BEGIN")
+            # Sadece ilk 6 sütunu kullan (etiketler hariç, eski DB'lerde yok)
+            veri = self._son_silinen[:6]
             self.cursor.execute(
                 "INSERT INTO islemler (id, tarih, tur, kategori, aciklama, tutar) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                self._son_silinen,
+                veri,
             )
             self.conn.commit()
             self._son_silinen = None
@@ -738,6 +760,115 @@ class Database:
         mevcut = self.ayar_oku(anahtar, "") or ""
         ozel = [k.strip() for k in mevcut.split(",") if k.strip()]
         return ozel
+
+    # ==========================
+    # TEKRARLAYAN İŞLEMLER
+    # ==========================
+
+    def tekrarlayan_ekle(
+        self, tur: str, kategori: str, aciklama: str, tutar: float, gun: int
+    ) -> None:
+        self.cursor.execute(
+            "INSERT INTO tekrarlayan (tur, kategori, aciklama, tutar, gun) "
+            "VALUES (?,?,?,?,?)",
+            (tur, kategori, aciklama, tutar, gun),
+        )
+        self.conn.commit()
+
+    def tekrarlayan_listele(self) -> List[Dict[str, Any]]:
+        self.cursor.execute(
+            "SELECT id, tur, kategori, aciklama, tutar, gun, aktif "
+            "FROM tekrarlayan ORDER BY tur, kategori"
+        )
+        return [
+            {
+                "id": r[0], "tur": r[1], "kategori": r[2],
+                "aciklama": r[3], "tutar": r[4], "gun": r[5], "aktif": r[6],
+            }
+            for r in self.cursor.fetchall()
+        ]
+
+    def tekrarlayan_sil(self, id: int) -> None:
+        self.cursor.execute("DELETE FROM tekrarlayan WHERE id=?", (id,))
+        self.conn.commit()
+
+    def tekrarlayan_toggle(self, id: int) -> None:
+        self.cursor.execute(
+            "UPDATE tekrarlayan SET aktif = CASE WHEN aktif=1 THEN 0 ELSE 1 END WHERE id=?",
+            (id,),
+        )
+        self.conn.commit()
+
+    def tekrarlayan_bugun_kontrol(self) -> List[Dict[str, Any]]:
+        """Bugünün gününde aktif tekrarlayan işlemleri getir."""
+        from datetime import datetime
+        bugun_gun = datetime.now().day
+        self.cursor.execute(
+            "SELECT * FROM tekrarlayan WHERE aktif=1 AND gun=?",
+            (bugun_gun,),
+        )
+        return [
+            {
+                "id": r[0], "tur": r[1], "kategori": r[2],
+                "aciklama": r[3], "tutar": r[4], "gun": r[5],
+            }
+            for r in self.cursor.fetchall()
+        ]
+
+    # ==========================
+    # AYLIK KARŞILAŞTIRMA
+    # ==========================
+
+    def aylik_karsilastirma(self) -> Dict[str, Any]:
+        """Bu ay ve geçen ayın gelir/gider karşılaştırması."""
+        from datetime import datetime
+        simdi = datetime.now()
+        bu_ay = simdi.month
+        bu_yil = simdi.year
+        gecen_ay = 12 if bu_ay == 1 else bu_ay - 1
+        gecen_yil = bu_yil - 1 if bu_ay == 1 else bu_yil
+
+        def _ay_toplam(ay, yil, tur):
+            self.cursor.execute(
+                "SELECT COALESCE(SUM(tutar),0) FROM islemler "
+                "WHERE tur=? AND CAST(strftime('%m', tarih) AS INTEGER)=? "
+                "AND CAST(strftime('%Y', tarih) AS INTEGER)=?",
+                (tur, ay, yil),
+            )
+            row = self.cursor.fetchone()
+            return float(row[0]) if row else 0.0
+
+        return {
+            "bu_ay": {"ay": bu_ay, "yil": bu_yil,
+                       "gelir": _ay_toplam(bu_ay, bu_yil, "Gelir"),
+                       "gider": _ay_toplam(bu_ay, bu_yil, "Gider")},
+            "gecen_ay": {"ay": gecen_ay, "yil": gecen_yil,
+                          "gelir": _ay_toplam(gecen_ay, gecen_yil, "Gelir"),
+                          "gider": _ay_toplam(gecen_ay, gecen_yil, "Gider")},
+        }
+
+    # ==========================
+    # GÜNLÜK / HAFTALIK FİLTRE
+    # ==========================
+
+    def gunluk_islemler(self) -> List[Tuple[Any, ...]]:
+        from datetime import date
+        bugun = date.today().strftime("%Y-%m-%d")
+        self.cursor.execute(
+            "SELECT * FROM islemler WHERE tarih=? ORDER BY id DESC", (bugun,)
+        )
+        return self.cursor.fetchall()
+
+    def haftalik_islemler(self) -> List[Tuple[Any, ...]]:
+        from datetime import date, timedelta
+        bugun = date.today()
+        hafta_basi = (bugun - timedelta(days=bugun.weekday())).strftime("%Y-%m-%d")
+        bugun_str = bugun.strftime("%Y-%m-%d")
+        self.cursor.execute(
+            "SELECT * FROM islemler WHERE tarih BETWEEN ? AND ? ORDER BY id DESC",
+            (hafta_basi, bugun_str),
+        )
+        return self.cursor.fetchall()
 
     # ==========================
     # KAPAT

@@ -279,6 +279,33 @@ class Dashboard(ctk.CTkFrame):
                 text_color="white",
             ).pack(pady=8)
 
+        # Bütçe ilerleme çubukları
+        if butce_durum:
+            progres_row = 4 if asan_kategoriler or yaklasan else 3
+            progres_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
+            progres_frame.grid(
+                row=progres_row, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
+            )
+            ctk.CTkLabel(
+                progres_frame,
+                text="📊 Bütçe Durumu",
+                font=("Segoe UI", 14, "bold"),
+                text_color="#5eead4",
+            ).pack(pady=(8, 4))
+
+            for b in butce_durum[:5]:
+                oran = min(b["harcanan"] / b["butce"] * 100, 100) if b["butce"] > 0 else 0
+                renk = "#ef4444" if oran > 90 else "#f59e0b" if oran > 70 else "#22c55e"
+                bar_frame = ctk.CTkFrame(progres_frame, fg_color="transparent")
+                bar_frame.pack(fill="x", padx=15, pady=2)
+                ctk.CTkLabel(bar_frame, text=b["kategori"], font=("Segoe UI", 11), width=80, anchor="w").pack(side="left")
+                bar_bg = ctk.CTkFrame(bar_frame, height=14, fg_color="#1e293b", corner_radius=7)
+                bar_bg.pack(side="left", fill="x", expand=True, padx=5)
+                bar_fill = ctk.CTkFrame(bar_bg, height=14, fg_color=renk, corner_radius=7)
+                bar_fill.place(relx=0, rely=0, relheight=1, relwidth=min(oran / 100, 1))
+                ctk.CTkLabel(bar_frame, text=f"%{int(oran)}", font=("Segoe UI", 10), width=40).pack(side="left")
+                ctk.CTkLabel(bar_frame, text=f"{b['harcanan']:,.0f}/{b['butce']:,.0f} ₺", font=("Segoe UI", 10), width=120, text_color="#94a3b8").pack(side="left")
+
         # ARAMA / FİLTRE
         arama_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
         arama_frame.grid(
@@ -310,6 +337,28 @@ class Dashboard(ctk.CTkFrame):
         )
         self.tur_filtre.set(tur_secili)
         self.tur_filtre.grid(row=0, column=1, padx=(5, 10), pady=8)
+
+        # Bugün / Bu hafta butonları
+        self.btn_bugun = ctk.CTkButton(
+            arama_frame, text="📅 Bugün", width=70, height=32,
+            font=("Segoe UI", 11), fg_color="#0d9488",
+            command=lambda: self._filtrele("bugun"),
+        )
+        self.btn_bugun.grid(row=0, column=3, padx=(2, 2), pady=8)
+
+        self.btn_hafta = ctk.CTkButton(
+            arama_frame, text="📆 Bu Hafta", width=85, height=32,
+            font=("Segoe UI", 11), fg_color="#0d9488",
+            command=lambda: self._filtrele("hafta"),
+        )
+        self.btn_hafta.grid(row=0, column=4, padx=(2, 5), pady=8)
+
+        self.btn_tumu = ctk.CTkButton(
+            arama_frame, text="📋 Tümü", width=60, height=32,
+            font=("Segoe UI", 11), fg_color="#475569",
+            command=lambda: self._filtrele("tumu"),
+        )
+        self.btn_tumu.grid(row=0, column=5, padx=(2, 10), pady=8)
 
         if arama_metni:
             self.arama_entry.insert(0, arama_metni)
@@ -649,3 +698,15 @@ class Dashboard(ctk.CTkFrame):
 
     def _hizli_gider(self):
         self._hizli_islem("Gider")
+
+    def _filtrele(self, mod):
+        """Bugün/Bu hafta/Tümü filtresi uygular."""
+        self.tablo.delete(*self.tablo.get_children())
+        if mod == "bugun":
+            islemler = self.db.gunluk_islemler()
+        elif mod == "hafta":
+            islemler = self.db.haftalik_islemler()
+        else:
+            islemler = self.db.islem_ara()
+        for satir in islemler:
+            self.tablo.insert("", "end", values=satir)

@@ -111,6 +111,46 @@ def _borc_kontrol_thread(db_path: str):
         time.sleep(1800)  # 30 dakikada bir kontrol
 
 
+def _tekrarlayan_kontrol_thread(db_path: str):
+    """Arka planda tekrarlayan işlemleri kontrol eder ve otomatik ekler."""
+    import sqlite3
+    import time
+
+    while True:
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            bugun_gun = date.today().day
+            cur.execute(
+                "SELECT tur, kategori, aciklama, tutar FROM tekrarlayan "
+                "WHERE aktif=1 AND gun=?",
+                (bugun_gun,),
+            )
+            for tur, kategori, aciklama, tutar in cur.fetchall():
+                # Bugün zaten eklenmiş mi kontrol et
+                bugun_str = date.today().strftime("%Y-%m-%d")
+                cur.execute(
+                    "SELECT COUNT(*) FROM islemler WHERE tarih=? AND tur=? AND "
+                    "kategori=? AND aciklama=? AND tutar=?",
+                    (bugun_str, tur, kategori, aciklama or "", tutar),
+                )
+                if cur.fetchone()[0] == 0:
+                    cur.execute(
+                        "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, etiketler) "
+                        "VALUES (?,?,?,?,?, 'tekrarlayan')",
+                        (bugun_str, tur, kategori, aciklama, tutar),
+                    )
+                    conn.commit()
+                    _bildirim_gonder(
+                        "🔄 Tekrarlayan İşlem Eklendi",
+                        f"{kategori}: {tutar:,.0f} ₺ ({tur})",
+                    )
+            conn.close()
+        except Exception:
+            pass
+        time.sleep(3600)  # Saatte bir kontrol
+
+
 def _tray_olustur(app):
     """Sistem tepsisi ikonu oluştur."""
     if not HAS_TRAY:
@@ -492,6 +532,14 @@ def baslat():
         daemon=True,
     )
     kontrol.start()
+
+    # Tekrarlayan işlem kontrolü
+    tekrar_kontrol = threading.Thread(
+        target=_tekrarlayan_kontrol_thread,
+        args=(str(db_module.DB_PATH),),
+        daemon=True,
+    )
+    tekrar_kontrol.start()
 
     def on_login(kullanici):
         app = FinedingApp()
