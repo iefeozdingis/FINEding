@@ -50,6 +50,7 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(self.db.kullanici_kaydet("admin", "admin", "Yönetici"))
         kullanici = self.db.kullanici_dogrula("admin", "admin")
         self.assertIsNotNone(kullanici)
+        assert kullanici is not None
         self.assertEqual(kullanici["kullanici_adi"], "admin")
         # İlk kullanıcı admin olmalı
         self.assertTrue(self.db.kullanici_admin_mi(kullanici["id"]))
@@ -63,6 +64,7 @@ class DatabaseTests(unittest.TestCase):
 
         k = self.db.kullanici_dogrula("test", "12345")
         self.assertIsNotNone(k)
+        assert k is not None
         self.assertEqual(k["ad_soyad"], "Test Kullanıcı")
 
         # Şifre değiştir
