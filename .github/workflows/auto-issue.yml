@@ -1,4 +1,4 @@
-name: Otomatik Issue - CI Hatasında
+name: CI Failure Auto Issue
 
 on:
   workflow_run:
@@ -13,50 +13,35 @@ jobs:
     permissions:
       issues: write
     steps:
-      - name: Issue Oluştur
+      - name: Create Issue
         uses: actions/github-script@v7
         with:
           script: |
-            const run = await github.rest.actions.getWorkflowRun({
+            const wf = context.payload.workflow_run;
+            const title = "CI Failed: " + wf.name + " - " + wf.head_branch;
+            const sha = wf.head_sha.substring(0, 7);
+            const body = "## CI Run Failed\n\n"
+              + "| Detail | Value |\n"
+              + "|--------|-------|\n"
+              + "| **Workflow** | " + wf.name + " |\n"
+              + "| **Branch** | `" + wf.head_branch + "` |\n"
+              + "| **Commit** | `" + sha + "` |\n"
+              + "| **Run** | [View](" + wf.html_url + ") |\n"
+              + "\nCI pipeline failed. Please check the run details.";
+
+            const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              run_id: context.payload.workflow_run.id,
+              state: "open",
+              labels: ["ci-failure"],
             });
 
-            const workflowName = context.payload.workflow_run.name;
-            const runUrl = context.payload.workflow_run.html_url;
-            const branch = context.payload.workflow_run.head_branch;
-            const commitSha = context.payload.workflow_run.head_sha.substring(0, 7);
-
-            const title = `🚨 CI Hatası: ${workflowName} - ${branch} (${commitSha})`;
-
-            const body = `
-## CI Çalışması Başarısız Oldu
-
-| Detay | Değer |
-|-------|-------|
-| **Workflow** | ${workflowName} |
-| **Branch** | \`${branch}\` |
-| **Commit** | \`${commitSha}\` |
-| **Çalışma** | [Görüntüle](${runUrl}) |
-
-CI pipeline'ında bir hata oluştu. Lütfen çalışma detaylarını inceleyip hatayı giderin.
-            `.trim();
-
-            // Aynı branch+workflow için zaten açık issue var mı kontrol et
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: ['ci-failure'],
+            const dup = issues.data.find(function(i) {
+              return i.title.includes(wf.name) && i.title.includes(wf.head_branch);
             });
 
-            const duplicate = existingIssues.data.find(issue =>
-              issue.title.includes(workflowName) && issue.title.includes(branch)
-            );
-
-            if (duplicate) {
-              console.log(`Zaten açık issue var: #${duplicate.number}`);
+            if (dup) {
+              console.log("Duplicate issue: #" + dup.number);
               return;
             }
 
@@ -65,7 +50,7 @@ CI pipeline'ında bir hata oluştu. Lütfen çalışma detaylarını inceleyip h
               repo: context.repo.repo,
               title: title,
               body: body,
-              labels: ['ci-failure', 'bug'],
+              labels: ["ci-failure", "bug"],
             });
 
-            console.log('Issue oluşturuldu.');
+            console.log("Issue created.");
