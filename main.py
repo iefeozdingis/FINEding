@@ -1,4 +1,5 @@
 import logging
+import sys
 import threading
 from datetime import date, datetime
 from pathlib import Path
@@ -45,17 +46,17 @@ def _global_exception_handler(exc_type, exc_val, exc_tb):
     logger.critical("Uygulama çöktü!", exc_info=(exc_type, exc_val, exc_tb))
 
 
-import sys
 sys.excepthook = _global_exception_handler
+
 
 def _asset_path(goreli_yol):
     """PyInstaller ve normal çalışma için asset yolunu çöz."""
     try:
-        import sys
         base = Path(sys._MEIPASS)
     except Exception:
         base = Path(__file__).parent
     return str(base / goreli_yol)
+
 
 ctk.set_default_color_theme(_asset_path("assets/fineding_theme.json"))
 
