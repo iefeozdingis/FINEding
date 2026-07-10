@@ -112,6 +112,7 @@ python main.py
 
 | Kısayol | Sayfa |
 |---------|-------|
+| `Ctrl+F` | 🔍 Tüm Uygulamada Ara |
 | `Ctrl+D` | Dashboard |
 | `Ctrl+N` | Gelir Ekle |
 | `Ctrl+Shift+N` | Gider Ekle |

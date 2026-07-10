@@ -15,6 +15,7 @@ from ui.dashboard import Dashboard
 from ui.gelir import GelirSayfasi
 from ui.gider import GiderSayfasi
 from ui.giris import GirisEkrani
+from ui.global_arama import GlobalAramaPenceresi
 from ui.grafikler import GrafiklerSayfasi
 from ui.hakkinda import HakkindaSayfasi
 from ui.planlama import PlanlamaSayfasi
@@ -346,6 +347,7 @@ class FinedingApp(ctk.CTk):
         self._bakiye_widget = None
 
         # Klavye kısayolları
+        self.bind_all("<Control-f>", lambda e: self._global_arama_ac())
         self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
         self.bind_all("<Control-n>", lambda e: self.gelir_ac())
         self.bind_all("<Control-N>", lambda e: self.gider_ac())
@@ -536,6 +538,20 @@ class FinedingApp(ctk.CTk):
         else:
             ctk.set_appearance_mode("Dark")
             self.tema_btn.configure(text="  🌙  Karanlık Tema")
+
+    def _global_arama_ac(self):
+        """Ctrl+F: tüm işlem ve borçlarda anında arama penceresi."""
+        if hasattr(self, "_arama_penceresi") and self._arama_penceresi is not None:
+            try:
+                if self._arama_penceresi.winfo_exists():
+                    self._arama_penceresi.lift()
+                    self._arama_penceresi.arama.focus_set()
+                    return
+            except Exception:
+                pass
+        self._arama_penceresi = GlobalAramaPenceresi(
+            self, self.db, self.dashboard_ac, self.planlama_ac
+        )
 
     def _ana_pencereyi_goster(self):
         """Ana pencereyi öne getirir (widget'tan 'Dashboard Aç' için)."""
