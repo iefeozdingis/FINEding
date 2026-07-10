@@ -1,5 +1,66 @@
 """Otomatik formatlama yardımcıları — tarih ve para girişi için."""
 
+from tkinter import ttk
+
+import customtkinter as ctk
+
+
+def tema_renkleri():
+    """Uygulamanın aydınlık/karanlık moduna göre renk paleti döner."""
+    if ctk.get_appearance_mode() == "Dark":
+        return {
+            "arka_plan": "#2b2b2b",
+            "baslik_arka_plan": "#333333",
+            "metin": "#DCE4EE",
+            "secili": "#0f766e",
+            "secili_metin": "#DCE4EE",
+            "izgara": "#3f3f3f",
+        }
+    return {
+        "arka_plan": "#dbdbdb",
+        "baslik_arka_plan": "#cfcfcf",
+        "metin": "#1a1a1a",
+        "secili": "#0d9488",
+        "secili_metin": "#DCE4EE",
+        "izgara": "#b5b5b5",
+    }
+
+
+def treeview_tema_uygula():
+    """Treeview tablolarını (Dashboard, Planlama) mevcut temaya göre boyar.
+
+    ttk widget'ları CustomTkinter'ın tema sisteminin dışında kaldığı için
+    varsayılan olarak her zaman OS'un açık renk temasıyla çiziliyorlardı.
+    """
+    renk = tema_renkleri()
+    style = ttk.Style()
+    style.theme_use("clam")
+
+    style.configure(
+        "Treeview",
+        background=renk["arka_plan"],
+        foreground=renk["metin"],
+        fieldbackground=renk["arka_plan"],
+        borderwidth=0,
+        rowheight=28,
+    )
+    style.map(
+        "Treeview",
+        background=[("selected", renk["secili"])],
+        foreground=[("selected", renk["secili_metin"])],
+    )
+    style.configure(
+        "Treeview.Heading",
+        background=renk["baslik_arka_plan"],
+        foreground=renk["metin"],
+        borderwidth=0,
+        font=("Segoe UI", 10, "bold"),
+    )
+    style.map(
+        "Treeview.Heading",
+        background=[("active", renk["baslik_arka_plan"])],
+    )
+
 
 def tarih_formatla(event=None):
     """CTkEntry içinde GG.AA.YYYY formatını otomatik uygular."""

@@ -5,7 +5,7 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from ui.utils import tarih_bind, tutar_bind, tutar_oku
+from ui.utils import tarih_bind, treeview_tema_uygula, tutar_bind, tutar_oku
 
 
 class PlanlamaSayfasi(ctk.CTkFrame):
@@ -13,6 +13,7 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         super().__init__(parent, fg_color="transparent")
         self.db = db
         self.dashboard_callback = dashboard_callback
+        treeview_tema_uygula()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)

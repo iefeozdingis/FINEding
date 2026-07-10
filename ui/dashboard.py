@@ -3,7 +3,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from database import normalize_date
-from ui.utils import tarih_bind, tutar_bind, tutar_oku
+from ui.utils import tarih_bind, treeview_tema_uygula, tutar_bind, tutar_oku
 
 
 class IslemDuzenlemePenceresi(ctk.CTkToplevel):
@@ -372,6 +372,7 @@ class Dashboard(ctk.CTkFrame):
 
         kolonlar = ("ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar")
 
+        treeview_tema_uygula()
         self.tablo = ttk.Treeview(
             tablo_frame, columns=kolonlar, show="headings", height=10
         )
