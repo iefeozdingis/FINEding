@@ -36,6 +36,14 @@ class GrafiklerSayfasi(ctk.CTkFrame):
             command=self._aylik_karsilastirma_ciz,
         ).pack(side="left", padx=5)
 
+        ctk.CTkButton(
+            btn_frame,
+            text="📆 Yıllık Karşılaştırma",
+            width=180,
+            fg_color="#9333ea",
+            command=self._yillik_karsilastirma_ciz,
+        ).pack(side="left", padx=5)
+
         self._grafik_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._grafik_frame.pack(fill="both", expand=True, padx=20, pady=10)
         self._grafik_ciz()
@@ -175,6 +183,45 @@ class GrafiklerSayfasi(ctk.CTkFrame):
             ax.text(i - w / 2, v + 50, f"{v:,.0f}", ha="center", fontsize=9, color=renk["metin"])
         for i, v in enumerate(gecen_deger):
             ax.text(i + w / 2, v + 50, f"{v:,.0f}", ha="center", fontsize=9, color=renk["metin"])
+
+        self._grafik_stil_uygula(fig, ax)
+
+        fig.tight_layout()
+        canvas = FigureCanvasTkAgg(fig, master=self._grafik_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def _yillik_karsilastirma_ciz(self):
+        """Yıl bazında gelir/gider karşılaştırma grafiği."""
+        for widget in self._grafik_frame.winfo_children():
+            widget.destroy()
+
+        veri = self.db.yillik_karsilastirma()
+        if not veri:
+            veri = [(str(datetime.now().year), 0.0, 0.0)]
+
+        yillar = [v[0] for v in veri]
+        gelirler = [v[1] for v in veri]
+        giderler = [v[2] for v in veri]
+
+        fig = Figure(figsize=(8, 5), dpi=100)
+        ax = fig.add_subplot(111)
+
+        x = range(len(yillar))
+        w = 0.35
+        ax.bar([i - w / 2 for i in x], gelirler, w, color="#2e8b57", label="Gelir")
+        ax.bar([i + w / 2 for i in x], giderler, w, color="#c0392b", label="Gider")
+        ax.set_xticks(x)
+        ax.set_xticklabels(yillar)
+        ax.set_ylabel("₺")
+        ax.set_title("📆 Yıllık Gelir / Gider Karşılaştırması")
+        ax.legend()
+
+        renk = tema_renkleri()
+        for i, v in enumerate(gelirler):
+            ax.text(i - w / 2, v, f"{v:,.0f}", ha="center", va="bottom", fontsize=9, color=renk["metin"])
+        for i, v in enumerate(giderler):
+            ax.text(i + w / 2, v, f"{v:,.0f}", ha="center", va="bottom", fontsize=9, color=renk["metin"])
 
         self._grafik_stil_uygula(fig, ax)
 

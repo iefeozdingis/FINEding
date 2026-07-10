@@ -208,6 +208,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("gecen_ay", kars)
         self.assertGreaterEqual(kars["bu_ay"]["gelir"], 5000.0)
 
+    def test_yillik_karsilastirma(self):
+        """Yıllık karşılaştırma testi."""
+        self.db.gelir_ekle("05.07.2025", "Maaş", "Test", 3000)
+        self.db.gider_ekle("10.07.2025", "Kira", "Test", 1000)
+        self.db.gelir_ekle("05.07.2026", "Maaş", "Test", 4000)
+        veri = self.db.yillik_karsilastirma()
+        veri_dict = {yil: (gelir, gider) for yil, gelir, gider in veri}
+        self.assertIn("2025", veri_dict)
+        self.assertIn("2026", veri_dict)
+        self.assertEqual(veri_dict["2025"], (3000.0, 1000.0))
+        self.assertEqual(veri_dict["2026"][0], 4000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

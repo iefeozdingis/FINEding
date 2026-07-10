@@ -887,6 +887,19 @@ class Database:
                          "gider": _ay_toplam(gecen_ay, gecen_yil, "Gider")},
         }
 
+    def yillik_karsilastirma(self) -> List[Tuple[str, float, float]]:
+        """(yil, gelir_toplam, gider_toplam) listesi döner — tüm yıllar, eskiden yeniye."""
+        self.cursor.execute("""
+        SELECT
+            strftime('%Y', tarih) AS yil,
+            COALESCE(SUM(CASE WHEN tur='Gelir' THEN tutar ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN tur='Gider' THEN tutar ELSE 0 END), 0)
+        FROM islemler
+        GROUP BY yil
+        ORDER BY yil ASC
+        """)
+        return [(r[0], float(r[1]), float(r[2])) for r in self.cursor.fetchall()]
+
     # ==========================
     # GÜNLÜK / HAFTALIK FİLTRE
     # ==========================

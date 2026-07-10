@@ -5,7 +5,7 @@
 **Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-12%2F12%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-13%2F13%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
@@ -50,6 +50,7 @@ FINEding, tüm gelir-gider takibini **tek bir şık arayüzde**, **ücretsiz** v
 - **Aylık gelir/gider çubuk grafiği**
 - **Kategori dağılımı pasta grafikleri** (Gelir + Gider)
 - **📊 Bu Ay vs Geçen Ay** karşılaştırma grafiği
+- **📆 Yıllık Karşılaştırma** — yıl bazında gelir/gider trendi
 - Matplotlib ile profesyonel görselleştirme
 
 ### 🔐 Çok Kullanıcılı Sistem
@@ -140,8 +141,9 @@ python -m unittest discover -s tests -v
 ✅ test_transaction_update_budget_and_settings
 ✅ test_undo
 ✅ test_user_authentication
+✅ test_yillik_karsilastirma
 ─────────────────────────
-12 tests — ALL OK
+13 tests — ALL OK
 ```
 
 ---
