@@ -214,18 +214,18 @@ class Dashboard(ctk.CTkFrame):
         ctk.CTkLabel(
             self,
             text="📊  Dashboard",
-            font=("Segoe UI", 30, "bold"),
+            font=("Segoe UI", 28, "bold"),
             text_color="#5eead4",
-        ).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 0))
 
         # Aktif kullanıcı
         kullanici_adi = self.db.ayar_oku("aktif_kullanici_adi", "")
         ctk.CTkLabel(
             self,
             text=f"👤 {kullanici_adi}",
-            font=("Segoe UI", 12),
-            text_color="#2dd4bf",
-        ).grid(row=0, column=1, sticky="e", padx=20, pady=(20, 5))
+            font=("Segoe UI", 11),
+            text_color="#64748b",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=24, pady=(0, 10))
 
         gelir = self.db.toplam_gelir()
         gider = self.db.toplam_gider()

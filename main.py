@@ -281,7 +281,7 @@ class FinedingApp(ctk.CTk):
             ("💰", "Gelir Ekle", "Ctrl+N", self.gelir_ac),
             ("💸", "Gider Ekle", "Ctrl+Shift+N", self.gider_ac),
             ("📊", "Grafikler", "Ctrl+Shift+G", self.grafikler_ac),
-            ("", "Bütçe", "Ctrl+B", self.butce_ac),
+            ("📅", "Bütçe", "Ctrl+B", self.butce_ac),
             ("📋", "Planlama & Takip", "Ctrl+P", self.planlama_ac),
         ]
 

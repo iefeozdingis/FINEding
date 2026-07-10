@@ -108,7 +108,14 @@
     "border_width": 0,
     "fg_color": ["gray65", "gray28"],
     "button_color": ["gray55", "gray50"],
-    "button_hover_color": ["gray45", "gray60"]
+    "button_hover_color": ["gray45", "gray60"],
+    "scrollbar_button_color": ["gray55", "gray50"],
+    "scrollbar_button_hover_color": ["gray45", "gray60"]
+  },
+  "CTkScrollableFrame": {
+    "corner_radius": 6,
+    "label_fg_color": ["gray86", "gray17"],
+    "label_text_color": ["gray10", "#DCE4EE"]
   },
   "CTkSegmentedButton": {
     "corner_radius": 6,

@@ -13,58 +13,38 @@ class BakiyeWidget(ctk.CTk):
     def __init__(self, db):
         super().__init__()
         self.db = db
-        self.title("FINEding — Bakiye")
-        self.geometry("220x70")
-        self.overrideredirect(True)  # Frameless
-        self.attributes("-topmost", True)  # Her zaman üstte
+        self.title("💎 FINEding — Bakiye")
+        self.geometry("200x50")
+        self.attributes("-topmost", True)
         self.resizable(False, False)
         self.configure(fg_color="#0f172a")
+        self.overrideredirect(True)
 
-        # Sağ alt köşeye yerleştir
+        # Sağ alt köşe
         self.update_idletasks()
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
-        self.geometry(f"+{sw - 240}+{sh - 120}")
+        self.geometry(f"+{sw - 210}+{sh - 80}")
 
-        # Sürükleme için
+        # Sürükleme
         self._offset_x = 0
         self._offset_y = 0
         self.bind("<Button-1>", self._tiklama_basla)
         self.bind("<B1-Motion>", self._surukle)
+        self.bind("<Button-3>", lambda e: self.kapat())
 
-        # Sağ tık menüsü
-        self.bind("<Button-3>", self._sag_tik)
-
-        # İçerik
-        self._cerceve = ctk.CTkFrame(
-            self, corner_radius=12, fg_color="#1e293b",
-            border_width=1, border_color="#334155",
-        )
-        self._cerceve.pack(fill="both", expand=True, padx=2, pady=2)
-
-        ctk.CTkLabel(
-            self._cerceve,
-            text="💎 FINEding",
-            font=("Segoe UI", 9, "bold"),
-            text_color="#64748b",
-        ).pack(pady=(8, 0))
-
-        self._bakiye_label = ctk.CTkLabel(
-            self._cerceve,
-            text="",
-            font=("Segoe UI", 18, "bold"),
+        self._label = ctk.CTkLabel(
+            self, text="", font=("Segoe UI", 14, "bold"),
             text_color="#ffffff",
         )
-        self._bakiye_label.pack(pady=(0, 8))
+        self._label.pack(expand=True, fill="both", padx=8, pady=4)
 
         self.guncelle()
-
-        # Periyodik güncelleme (30 saniyede bir)
+        import threading
         self._durdur = False
-        self._thread = threading.Thread(target=self._periyodik_guncelle, daemon=True)
-        self._thread.start()
+        t = threading.Thread(target=self._periyodik_guncelle, daemon=True)
+        t.start()
 
-        # Kapatma
         self.protocol("WM_DELETE_WINDOW", self.kapat)
 
     def _tiklama_basla(self, event):
@@ -123,12 +103,12 @@ class BakiyeWidget(ctk.CTk):
             bakiye = self.db.bakiye()
             renk = "#22c55e" if bakiye >= 0 else "#ef4444"
             emoji = "📈" if bakiye >= 0 else "📉"
-            self._bakiye_label.configure(
-                text=f"{emoji} {bakiye:,.2f} ₺",
+            self._label.configure(
+                text=f"{emoji} Bakiye: {bakiye:,.2f} ₺",
                 text_color=renk,
             )
         except Exception:
-            self._bakiye_label.configure(text="💰 --- ₺", text_color="#64748b")
+            self._label.configure(text="💰 --- ₺", text_color="#64748b")
 
     def _periyodik_guncelle(self):
         while not self._durdur:
