@@ -572,7 +572,7 @@ class FinedingApp(ctk.CTk):
                 border_color="#2dd4bf",
                 text_color="#ffffff",
             )
-            self._bakiye_widget = BakiyeWidget(self.db, ana_pencere_callback=self._ana_pencereyi_goster)
+            self._bakiye_widget = BakiyeWidget(self, self.db, ana_pencere_callback=self._ana_pencereyi_goster)
 
     def hesap_degistir(self):
         """Oturumu kapatıp giriş ekranına dön."""

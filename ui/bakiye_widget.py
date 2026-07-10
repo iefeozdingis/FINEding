@@ -6,11 +6,16 @@ import time
 import customtkinter as ctk
 
 
-class BakiyeWidget(ctk.CTk):
-    """Masaüstünde sabit duran, frameless mini bakiye penceresi."""
+class BakiyeWidget(ctk.CTkToplevel):
+    """Masaüstünde sabit duran, frameless mini bakiye penceresi.
 
-    def __init__(self, db, ana_pencere_callback=None):
-        super().__init__()
+    Ana pencerenin mainloop'unu paylaşması için CTkToplevel kullanılır —
+    bağımsız bir CTk() penceresi kendi olay döngüsü hiç işletilmediği
+    için hiçbir zaman ekrana çizilmiyordu (görünmez kalıyordu).
+    """
+
+    def __init__(self, master, db, ana_pencere_callback=None):
+        super().__init__(master)
         self.db = db
         self._ana_pencere_callback = ana_pencere_callback
         self.title("💎 FINEding — Bakiye")
