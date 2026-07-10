@@ -110,6 +110,23 @@
     "button_color": ["gray55", "gray50"],
     "button_hover_color": ["gray45", "gray60"]
   },
+  "CTkScrollableFrame": {
+    "corner_radius": 6,
+    "border_width": 0,
+    "fg_color": ["gray86", "gray17"],
+    "label_fg_color": ["gray81", "gray20"],
+    "label_text_color": ["gray10", "#DCE4EE"],
+    "scrollbar_button_color": ["gray55", "gray50"],
+    "scrollbar_button_hover_color": ["gray45", "gray60"]
+  },
+  "CTkTextbox": {
+    "corner_radius": 6,
+    "border_width": 0,
+    "fg_color": ["gray86", "gray17"],
+    "text_color": ["gray10", "#DCE4EE"],
+    "scrollbar_button_color": ["gray55", "gray50"],
+    "scrollbar_button_hover_color": ["gray45", "gray60"]
+  },
   "CTkSegmentedButton": {
     "corner_radius": 6,
     "border_width": 2,
