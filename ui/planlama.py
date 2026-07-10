@@ -526,6 +526,115 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             self.db.borc_sil(int(veri[0]))
             self._borclari_yenile()
 
+    # =========================================
+    # TEKRARLAYAN İŞLEMLER SEKMESİ
+    # =========================================
+
+    def _tekrarlayan_olustur(self):
+        tab = self.tabview.tab("🔄 Tekrarlayan")
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            tab,
+            text="Her ay belirtilen günde otomatik eklenir",
+            font=("Segoe UI", 12),
+            text_color="#94a3b8",
+        ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 5))
+
+        # Ekleme formu
+        form = ctk.CTkFrame(tab, fg_color="transparent")
+        form.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
+
+        self.t_tur = ctk.CTkComboBox(form, width=90, values=["Gelir", "Gider"])
+        self.t_tur.set("Gider")
+        self.t_tur.pack(side="left", padx=3)
+
+        self.t_kategori = ctk.CTkEntry(form, width=100, placeholder_text="Kategori")
+        self.t_kategori.pack(side="left", padx=3)
+
+        self.t_aciklama = ctk.CTkEntry(form, width=140, placeholder_text="Açıklama")
+        self.t_aciklama.pack(side="left", padx=3)
+
+        self.t_tutar = ctk.CTkEntry(form, width=90, placeholder_text="Tutar")
+        tutar_bind(self.t_tutar)
+        self.t_tutar.pack(side="left", padx=3)
+
+        ctk.CTkLabel(form, text="Gün:", font=("Segoe UI", 12)).pack(side="left", padx=(5, 2))
+        self.t_gun = ctk.CTkEntry(form, width=45, placeholder_text="1")
+        self.t_gun.insert(0, "1")
+        self.t_gun.pack(side="left", padx=3)
+
+        ctk.CTkButton(
+            form, text="➕ Ekle", width=70, height=32,
+            fg_color="#0d9488", command=self._tekrarlayan_ekle,
+        ).pack(side="left", padx=5)
+
+        # Liste
+        self.t_liste = ttk.Treeview(
+            tab, columns=("ID", "Tur", "Kategori", "Açıklama", "Tutar", "Gün", "Aktif"),
+            show="headings", height=8,
+        )
+        for k in ("ID", "Tur", "Kategori", "Açıklama", "Tutar", "Gün", "Aktif"):
+            self.t_liste.heading(k, text=k)
+            self.t_liste.column(k, width=80, anchor="center")
+        self.t_liste.grid(row=2, column=0, sticky="nsew", padx=15, pady=10)
+
+        btn_row = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_row.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 10))
+        ctk.CTkButton(
+            btn_row, text="🔄 Aktif/Deaktif", width=120, height=28,
+            fg_color="#f59e0b", command=self._tekrarlayan_toggle,
+        ).pack(side="left", padx=3)
+        ctk.CTkButton(
+            btn_row, text="🗑 Sil", width=70, height=28,
+            fg_color="#c0392b", command=self._tekrarlayan_sil,
+        ).pack(side="left", padx=3)
+
+        self._tekrarlayan_yenile()
+
+    def _tekrarlayan_yenile(self):
+        self.t_liste.delete(*self.t_liste.get_children())
+        for t in self.db.tekrarlayan_listele():
+            self.t_liste.insert("", "end", values=(
+                t["id"], t["tur"], t["kategori"], t["aciklama"],
+                f"{t['tutar']:,.2f}", t["gun"], "✅" if t["aktif"] else "❌"
+            ))
+
+    def _tekrarlayan_ekle(self):
+        try:
+            tur = self.t_tur.get()
+            kat = self.t_kategori.get().strip()
+            ack = self.t_aciklama.get().strip()
+            tut = tutar_oku(self.t_tutar)
+            gun = int(self.t_gun.get())
+            if not kat or tut <= 0:
+                raise ValueError
+            if gun < 1 or gun > 28:
+                messagebox.showwarning("Uyarı", "Gün 1-28 arası olmalı (her ay geçerli).")
+                return
+        except (ValueError, AttributeError):
+            messagebox.showerror("Hata", "Tüm alanları doğru doldurun.")
+            return
+        self.db.tekrarlayan_ekle(tur, kat, ack, tut, gun)
+        self._tekrarlayan_yenile()
+
+    def _tekrarlayan_toggle(self):
+        secili = self.t_liste.selection()
+        if not secili:
+            return
+        id_ = self.t_liste.item(secili[0])["values"][0]
+        self.db.tekrarlayan_toggle(id_)
+        self._tekrarlayan_yenile()
+
+    def _tekrarlayan_sil(self):
+        secili = self.t_liste.selection()
+        if not secili:
+            return
+        id_ = self.t_liste.item(secili[0])["values"][0]
+        self.db.tekrarlayan_sil(id_)
+        self._tekrarlayan_yenile()
+
 
 # =========================================
 # YARDIMCI PENCERELER
@@ -717,112 +826,3 @@ class BorcDuzenlePenceresi(ctk.CTkToplevel):
         self.db.borc_guncelle(self.borc_id, kalan, self.durum.get())
         self.destroy()
         self._yenile_cb()
-
-    # =========================================
-    # TEKRARLAYAN İŞLEMLER SEKMESİ
-    # =========================================
-
-    def _tekrarlayan_olustur(self):
-        tab = self.tabview.tab("🔄 Tekrarlayan")
-        tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(2, weight=1)
-
-        ctk.CTkLabel(
-            tab,
-            text="Her ay belirtilen günde otomatik eklenir",
-            font=("Segoe UI", 12),
-            text_color="#94a3b8",
-        ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 5))
-
-        # Ekleme formu
-        form = ctk.CTkFrame(tab, fg_color="transparent")
-        form.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
-
-        self.t_tur = ctk.CTkComboBox(form, width=90, values=["Gelir", "Gider"])
-        self.t_tur.set("Gider")
-        self.t_tur.pack(side="left", padx=3)
-
-        self.t_kategori = ctk.CTkEntry(form, width=100, placeholder_text="Kategori")
-        self.t_kategori.pack(side="left", padx=3)
-
-        self.t_aciklama = ctk.CTkEntry(form, width=140, placeholder_text="Açıklama")
-        self.t_aciklama.pack(side="left", padx=3)
-
-        self.t_tutar = ctk.CTkEntry(form, width=90, placeholder_text="Tutar")
-        tutar_bind(self.t_tutar)
-        self.t_tutar.pack(side="left", padx=3)
-
-        ctk.CTkLabel(form, text="Gün:", font=("Segoe UI", 12)).pack(side="left", padx=(5, 2))
-        self.t_gun = ctk.CTkEntry(form, width=45, placeholder_text="1")
-        self.t_gun.insert(0, "1")
-        self.t_gun.pack(side="left", padx=3)
-
-        ctk.CTkButton(
-            form, text="➕ Ekle", width=70, height=32,
-            fg_color="#0d9488", command=self._tekrarlayan_ekle,
-        ).pack(side="left", padx=5)
-
-        # Liste
-        self.t_liste = ttk.Treeview(
-            tab, columns=("ID", "Tur", "Kategori", "Açıklama", "Tutar", "Gün", "Aktif"),
-            show="headings", height=8,
-        )
-        for k in ("ID", "Tur", "Kategori", "Açıklama", "Tutar", "Gün", "Aktif"):
-            self.t_liste.heading(k, text=k)
-            self.t_liste.column(k, width=80, anchor="center")
-        self.t_liste.grid(row=2, column=0, sticky="nsew", padx=15, pady=10)
-
-        btn_row = ctk.CTkFrame(tab, fg_color="transparent")
-        btn_row.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 10))
-        ctk.CTkButton(
-            btn_row, text="🔄 Aktif/Deaktif", width=120, height=28,
-            fg_color="#f59e0b", command=self._tekrarlayan_toggle,
-        ).pack(side="left", padx=3)
-        ctk.CTkButton(
-            btn_row, text="🗑 Sil", width=70, height=28,
-            fg_color="#c0392b", command=self._tekrarlayan_sil,
-        ).pack(side="left", padx=3)
-
-        self._tekrarlayan_yenile()
-
-    def _tekrarlayan_yenile(self):
-        self.t_liste.delete(*self.t_liste.get_children())
-        for t in self.db.tekrarlayan_listele():
-            self.t_liste.insert("", "end", values=(
-                t["id"], t["tur"], t["kategori"], t["aciklama"],
-                f"{t['tutar']:,.2f}", t["gun"], "✅" if t["aktif"] else "❌"
-            ))
-
-    def _tekrarlayan_ekle(self):
-        try:
-            tur = self.t_tur.get()
-            kat = self.t_kategori.get().strip()
-            ack = self.t_aciklama.get().strip()
-            tut = tutar_oku(self.t_tutar)
-            gun = int(self.t_gun.get())
-            if not kat or tut <= 0:
-                raise ValueError
-            if gun < 1 or gun > 28:
-                messagebox.showwarning("Uyarı", "Gün 1-28 arası olmalı (her ay geçerli).")
-                return
-        except (ValueError, AttributeError):
-            messagebox.showerror("Hata", "Tüm alanları doğru doldurun.")
-            return
-        self.db.tekrarlayan_ekle(tur, kat, ack, tut, gun)
-        self._tekrarlayan_yenile()
-
-    def _tekrarlayan_toggle(self):
-        secili = self.t_liste.selection()
-        if not secili:
-            return
-        id_ = self.t_liste.item(secili[0])["values"][0]
-        self.db.tekrarlayan_toggle(id_)
-        self._tekrarlayan_yenile()
-
-    def _tekrarlayan_sil(self):
-        secili = self.t_liste.selection()
-        if not secili:
-            return
-        id_ = self.t_liste.item(secili[0])["values"][0]
-        self.db.tekrarlayan_sil(id_)
-        self._tekrarlayan_yenile()

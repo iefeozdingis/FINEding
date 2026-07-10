@@ -5,7 +5,7 @@
 **Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-7%2F7%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-12%2F12%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
@@ -128,15 +128,20 @@ python -m unittest discover -s tests -v
 ```
 
 ```
+✅ test_aylik_karsilastirma
+✅ test_bcrypt_hash
 ✅ test_borclar
 ✅ test_budget_status_summary
+✅ test_gunluk_haftalik
+✅ test_islem_log
 ✅ test_planlama
 ✅ test_search
+✅ test_tekrarlayan
 ✅ test_transaction_update_budget_and_settings
 ✅ test_undo
 ✅ test_user_authentication
 ─────────────────────────
-7 tests — ALL OK
+12 tests — ALL OK
 ```
 
 ---
@@ -184,6 +189,12 @@ FINEding/
 | Sistem Tepsisi | Pystray |
 
 ---
+
+## 🩹 Son Düzeltmeler (2026-07-10)
+
+- **Planlama → Tekrarlayan sekmesi açılmıyordu:** `_tekrarlayan_olustur` ve ilgili metodlar yanlışlıkla `BorcDuzenlePenceresi` sınıfının altına yazılmıştı; doğru sınıfa (`PlanlamaSayfasi`) taşındı.
+- **Bütçe sayfası tema hatası:** `assets/fineding_theme.json` içindeki `CTkTextbox` bölümünde `border_color` anahtarı eksikti, eklendi.
+- Tüm sayfalar (`ButceSayfasi`, `PlanlamaSayfasi`, `HakkindaSayfasi`) artık hatasız açılıyor; 12/12 test yeşil.
 
 ## 📝 Geliştirici Notları
 

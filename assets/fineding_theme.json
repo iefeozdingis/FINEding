@@ -124,6 +124,7 @@
     "corner_radius": 6,
     "border_width": 0,
     "fg_color": ["gray86", "gray17"],
+    "border_color": ["#979DA2", "#565B5E"],
     "text_color": ["gray10", "#DCE4EE"],
     "scrollbar_button_color": ["gray55", "gray50"],
     "scrollbar_button_hover_color": ["gray45", "gray60"]
