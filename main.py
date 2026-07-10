@@ -335,6 +335,7 @@ class FinedingApp(ctk.CTk):
         )
         self.widget_btn.pack(fill="x")
         self._widget_acik = False
+        self._bakiye_widget = None
 
         # Klavye kısayolları
         self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
@@ -490,6 +491,13 @@ class FinedingApp(ctk.CTk):
 
     def _gercek_cikis(self):
         """Tamamen kapat."""
+        # Widget'ı kapat
+        if hasattr(self, "_bakiye_widget") and self._bakiye_widget:
+            try:
+                self._bakiye_widget.kapat()
+            except Exception:
+                pass
+
         # Otomatik yedekle
         try:
             from datetime import datetime
@@ -526,10 +534,17 @@ class FinedingApp(ctk.CTk):
         if self._widget_acik:
             self._widget_acik = False
             self.widget_btn.configure(text="  💰  Bakiye Widget", fg_color="transparent")
+            # Widget'ı kapat
+            if hasattr(self, "_bakiye_widget") and self._bakiye_widget:
+                try:
+                    self._bakiye_widget.kapat()
+                except Exception:
+                    pass
+                self._bakiye_widget = None
         else:
             self._widget_acik = True
             self.widget_btn.configure(text="  💰  Widget Açık", fg_color="#0d9488")
-            BakiyeWidget.baslat(self.db)
+            self._bakiye_widget = BakiyeWidget(self.db)
 
     def hesap_degistir(self):
         """Oturumu kapatıp giriş ekranına dön."""
