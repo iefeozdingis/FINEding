@@ -150,6 +150,21 @@ class DatabaseTests(unittest.TestCase):
         sonuc = self.db.islem_ara()
         self.assertEqual(len(sonuc), 2)
 
+    def test_etiket(self):
+        """İşlem etiketleme: ekleme, etikete göre arama ve güncelleme."""
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Ocak maaşı", 10000, "iş, önemli")
+        sonuc = self.db.islem_ara("önemli")
+        self.assertEqual(len(sonuc), 1)
+        self.assertEqual(sonuc[0][6], "iş, önemli")
+
+        islem_id = sonuc[0][0]
+        self.db.guncelle_islem(
+            islem_id, "01.07.2026", "Gelir", "Maaş", "Ocak maaşı", 10000, "güncellendi"
+        )
+        guncel = self.db.islem_ara("güncellendi")
+        self.assertEqual(len(guncel), 1)
+        self.assertEqual(guncel[0][6], "güncellendi")
+
     def test_bcrypt_hash(self):
         """Bcrypt hash'leme ve doğrulama testi."""
         from database import _sifre_hashla, _sifre_dogrula

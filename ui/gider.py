@@ -107,6 +107,17 @@ class GiderSayfasi(ctk.CTkFrame):
         self.tutar.pack(pady=8)
         tutar_bind(self.tutar)
 
+        self.etiketler = ctk.CTkEntry(
+            form,
+            width=380,
+            height=42,
+            placeholder_text="Etiketler (virgülle ayır, örn: iş, önemli)",
+            font=("Segoe UI", 14),
+            corner_radius=10,
+            border_color="#c0392b",
+        )
+        self.etiketler.pack(pady=8)
+
         ctk.CTkButton(
             kart,
             text="💾  Gideri Kaydet",
@@ -146,12 +157,14 @@ class GiderSayfasi(ctk.CTkFrame):
                 kategori,
                 self.aciklama.get(),
                 tutar,
+                self.etiketler.get().strip(),
             )
 
             messagebox.showinfo("Başarılı", "Gider başarıyla kaydedildi.")
 
             self.aciklama.delete(0, "end")
             self.tutar.delete(0, "end")
+            self.etiketler.delete(0, "end")
 
             if self.dashboard_callback:
                 self.dashboard_callback()

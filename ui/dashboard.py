@@ -70,6 +70,11 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         self.tutar.pack(pady=8)
         tutar_bind(self.tutar)
 
+        self.etiketler = ctk.CTkEntry(self, width=300, placeholder_text="Etiketler (virgülle ayır)")
+        if len(islem) > 6 and islem[6]:
+            self.etiketler.insert(0, islem[6])
+        self.etiketler.pack(pady=8)
+
         ctk.CTkButton(self, text="💾 Kaydet", width=220, command=self.kaydet).pack(
             pady=16
         )
@@ -113,6 +118,7 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
                 self.kategori.get(),
                 self.aciklama.get(),
                 tutar_oku(self.tutar),
+                self.etiketler.get().strip(),
             )
             messagebox.showinfo("Başarılı", "İşlem güncellendi.")
             self.destroy()
@@ -313,7 +319,7 @@ class Dashboard(ctk.CTkFrame):
         arama_frame.grid_columnconfigure(0, weight=1)
 
         self.arama_entry = ctk.CTkEntry(
-            arama_frame, placeholder_text="🔍 Kategori, açıklama veya tutar ara..."
+            arama_frame, placeholder_text="🔍 Kategori, açıklama, etiket veya tutar ara..."
         )
         self.arama_entry.grid(row=0, column=0, sticky="ew", padx=(10, 5), pady=8)
         self.arama_entry.bind("<Return>", lambda e: self.yenile())
@@ -370,7 +376,7 @@ class Dashboard(ctk.CTkFrame):
             tablo_frame, text="Son İşlemler", font=("Segoe UI", 20, "bold")
         ).pack(pady=10)
 
-        kolonlar = ("ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar")
+        kolonlar = ("ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket")
 
         treeview_tema_uygula()
         self.tablo = ttk.Treeview(

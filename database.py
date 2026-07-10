@@ -261,9 +261,12 @@ class Database:
         sorgu = "SELECT * FROM islemler WHERE 1=1"
         params: List[Any] = []
         if arama:
-            sorgu += " AND (kategori LIKE ? OR aciklama LIKE ? OR CAST(tutar AS TEXT) LIKE ?)"
+            sorgu += (
+                " AND (kategori LIKE ? OR aciklama LIKE ? OR CAST(tutar AS TEXT) LIKE ?"
+                " OR etiketler LIKE ?)"
+            )
             like = f"%{arama}%"
-            params.extend([like, like, like])
+            params.extend([like, like, like, like])
         if tur:
             sorgu += " AND tur=?"
             params.append(tur)
@@ -279,16 +282,27 @@ class Database:
         kategori: str,
         aciklama: Optional[str],
         tutar: float,
+        etiketler: Optional[str] = None,
     ) -> None:
         tarih_iso = normalize_date(tarih)
-        self.cursor.execute(
-            """
-        UPDATE islemler
-        SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?
-        WHERE id=?
-        """,
-            (tarih_iso, tur, kategori, aciklama, tutar, id),
-        )
+        if etiketler is None:
+            self.cursor.execute(
+                """
+            UPDATE islemler
+            SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?
+            WHERE id=?
+            """,
+                (tarih_iso, tur, kategori, aciklama, tutar, id),
+            )
+        else:
+            self.cursor.execute(
+                """
+            UPDATE islemler
+            SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?, etiketler=?
+            WHERE id=?
+            """,
+                (tarih_iso, tur, kategori, aciklama, tutar, etiketler, id),
+            )
         self.conn.commit()
         self._log_islem("guncelle", id, f"{kategori}: {tutar}")
 

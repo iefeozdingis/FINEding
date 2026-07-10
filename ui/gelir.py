@@ -98,6 +98,17 @@ class GelirSayfasi(ctk.CTkFrame):
         self.tutar.pack(pady=8)
         tutar_bind(self.tutar)
 
+        self.etiketler = ctk.CTkEntry(
+            form,
+            width=380,
+            height=42,
+            placeholder_text="Etiketler (virgülle ayır, örn: iş, önemli)",
+            font=("Segoe UI", 14),
+            corner_radius=10,
+            border_color="#2e8b57",
+        )
+        self.etiketler.pack(pady=8)
+
         self.kaydet_btn = ctk.CTkButton(
             kart,
             text="💾  Geliri Kaydet",
@@ -133,12 +144,16 @@ class GelirSayfasi(ctk.CTkFrame):
             self.db.kategori_ekle("Gelir", kategori)
             self.kategori.configure(values=self._kategori_listesi())
 
-            self.db.gelir_ekle(self.tarih.get(), kategori, self.aciklama.get(), tutar)
+            self.db.gelir_ekle(
+                self.tarih.get(), kategori, self.aciklama.get(), tutar,
+                self.etiketler.get().strip(),
+            )
 
             messagebox.showinfo("Başarılı", "Gelir başarıyla kaydedildi.")
 
             self.aciklama.delete(0, "end")
             self.tutar.delete(0, "end")
+            self.etiketler.delete(0, "end")
 
             if self.dashboard_callback:
                 self.dashboard_callback()
