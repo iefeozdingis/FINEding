@@ -537,6 +537,12 @@ class FinedingApp(ctk.CTk):
             ctk.set_appearance_mode("Dark")
             self.tema_btn.configure(text="  🌙  Karanlık Tema")
 
+    def _ana_pencereyi_goster(self):
+        """Ana pencereyi öne getirir (widget'tan 'Dashboard Aç' için)."""
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
     def _widget_toggle(self):
         """Bakiye widget'ını aç/kapat."""
         if self._widget_acik:
@@ -552,7 +558,7 @@ class FinedingApp(ctk.CTk):
         else:
             self._widget_acik = True
             self.widget_btn.configure(text="  💰  Widget Açık", fg_color="#0d9488")
-            self._bakiye_widget = BakiyeWidget(self.db)
+            self._bakiye_widget = BakiyeWidget(self.db, ana_pencere_callback=self._ana_pencereyi_goster)
 
     def hesap_degistir(self):
         """Oturumu kapatıp giriş ekranına dön."""

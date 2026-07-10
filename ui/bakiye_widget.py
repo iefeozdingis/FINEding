@@ -2,7 +2,6 @@
 
 import threading
 import time
-from pathlib import Path
 
 import customtkinter as ctk
 
@@ -10,9 +9,10 @@ import customtkinter as ctk
 class BakiyeWidget(ctk.CTk):
     """Masaüstünde sabit duran, frameless mini bakiye penceresi."""
 
-    def __init__(self, db):
+    def __init__(self, db, ana_pencere_callback=None):
         super().__init__()
         self.db = db
+        self._ana_pencere_callback = ana_pencere_callback
         self.title("💎 FINEding — Bakiye")
         self.geometry("200x50")
         self.attributes("-topmost", True)
@@ -31,7 +31,7 @@ class BakiyeWidget(ctk.CTk):
         self._offset_y = 0
         self.bind("<Button-1>", self._tiklama_basla)
         self.bind("<B1-Motion>", self._surukle)
-        self.bind("<Button-3>", lambda e: self.kapat())
+        self.bind("<Button-3>", self._sag_tik)
 
         self._label = ctk.CTkLabel(
             self, text="", font=("Segoe UI", 14, "bold"),
@@ -87,15 +87,12 @@ class BakiyeWidget(ctk.CTk):
         menu.bind("<FocusOut>", lambda e: menu.destroy())
 
     def _dashboard_ac(self):
-        """Ana uygulamayı aç veya öne getir."""
-        try:
-            import subprocess
-            subprocess.Popen(
-                [str(Path(__file__).parent.parent / ".venv" / "Scripts" / "pythonw.exe"),
-                 str(Path(__file__).parent.parent / "main.py")],
-            )
-        except Exception:
-            pass
+        """Ana uygulamayı öne getirir (aynı process içinde zaten çalışıyor)."""
+        if self._ana_pencere_callback:
+            try:
+                self._ana_pencere_callback()
+            except Exception:
+                pass
 
     def guncelle(self):
         try:
@@ -120,13 +117,3 @@ class BakiyeWidget(ctk.CTk):
     def kapat(self):
         self._durdur = True
         self.destroy()
-
-    @staticmethod
-    def baslat(db):
-        """Widget'ı bağımsız bir thread'de başlat."""
-        def _run():
-            widget = BakiyeWidget(db)
-            widget.mainloop()
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
-        return t
