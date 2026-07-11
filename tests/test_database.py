@@ -236,6 +236,27 @@ class DatabaseTests(unittest.TestCase):
         self.db.tekrarlayan_sil(liste[0]["id"])
         self.assertEqual(len(self.db.tekrarlayan_listele()), 1)
 
+    def test_tasarruf_hedefi(self):
+        """Tasarruf hedefi ekleme, katkı ve ilerleme testi."""
+        hedef_id = self.db.tasarruf_hedefi_ekle("Tatil", 10000, "31.12.2026")
+        liste = self.db.tasarruf_hedefleri_listele()
+        self.assertEqual(len(liste), 1)
+        self.assertEqual(liste[0]["hedef_tutar"], 10000.0)
+        self.assertEqual(liste[0]["biriken_tutar"], 0.0)
+
+        self.db.tasarruf_katki_ekle(hedef_id, 2500)
+        self.db.tasarruf_katki_ekle(hedef_id, 1000)
+        guncel = self.db.tasarruf_hedefleri_listele()[0]
+        self.assertEqual(guncel["biriken_tutar"], 3500.0)
+
+        # Negatife düşmemeli
+        self.db.tasarruf_katki_ekle(hedef_id, -100000)
+        sonuc = self.db.tasarruf_hedefleri_listele()[0]
+        self.assertEqual(sonuc["biriken_tutar"], 0.0)
+
+        self.db.tasarruf_hedefi_sil(hedef_id)
+        self.assertEqual(len(self.db.tasarruf_hedefleri_listele()), 0)
+
     def test_gunluk_haftalik(self):
         """Günlük ve haftalık filtre testi."""
         from datetime import date

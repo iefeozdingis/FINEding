@@ -174,6 +174,17 @@ class Database:
         )
         """)
 
+        # Tasarruf hedefleri
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tasarruf_hedefleri(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ad TEXT NOT NULL,
+            hedef_tutar REAL NOT NULL,
+            biriken_tutar REAL NOT NULL DEFAULT 0,
+            hedef_tarih TEXT
+        )
+        """)
+
         # İlk kullanıcı otomatik admin olur (ID=1)
 
         self.conn.commit()
@@ -923,6 +934,45 @@ class Database:
             }
             for r in self.cursor.fetchall()
         ]
+
+    # ==========================
+    # TASARRUF HEDEFLERİ
+    # ==========================
+
+    def tasarruf_hedefi_ekle(self, ad: str, hedef_tutar: float, hedef_tarih: str = "") -> int:
+        hedef_tarih_iso = normalize_date(hedef_tarih) if hedef_tarih else None
+        self.cursor.execute(
+            "INSERT INTO tasarruf_hedefleri (ad, hedef_tutar, biriken_tutar, hedef_tarih) "
+            "VALUES (?, ?, 0, ?)",
+            (ad, hedef_tutar, hedef_tarih_iso),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def tasarruf_hedefleri_listele(self) -> List[Dict[str, Any]]:
+        self.cursor.execute(
+            "SELECT id, ad, hedef_tutar, biriken_tutar, hedef_tarih "
+            "FROM tasarruf_hedefleri ORDER BY id DESC"
+        )
+        return [
+            {
+                "id": r[0], "ad": r[1], "hedef_tutar": float(r[2]),
+                "biriken_tutar": float(r[3]), "hedef_tarih": r[4],
+            }
+            for r in self.cursor.fetchall()
+        ]
+
+    def tasarruf_katki_ekle(self, id: int, tutar: float) -> None:
+        """Hedefe katkı ekler (negatif tutar geri çekme için kullanılabilir)."""
+        self.cursor.execute(
+            "UPDATE tasarruf_hedefleri SET biriken_tutar = MAX(0, biriken_tutar + ?) WHERE id=?",
+            (tutar, id),
+        )
+        self.conn.commit()
+
+    def tasarruf_hedefi_sil(self, id: int) -> None:
+        self.cursor.execute("DELETE FROM tasarruf_hedefleri WHERE id=?", (id,))
+        self.conn.commit()
 
     # ==========================
     # AYLIK KARŞILAŞTIRMA

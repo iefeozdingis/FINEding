@@ -32,10 +32,12 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         self.tabview.add("📋 Aylık Planlama")
         self.tabview.add("💳 Borçlar & Alacaklar")
         self.tabview.add("🔄 Tekrarlayan")
+        self.tabview.add("🎯 Tasarruf Hedefleri")
 
         self._aylik_planlama_olustur()
         self._borc_alacak_olustur()
         self._tekrarlayan_olustur()
+        self._tasarruf_olustur()
 
     # =========================================
     # AYLIK PLANLAMA SEKMESİ
@@ -635,6 +637,158 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         id_ = self.t_liste.item(secili[0])["values"][0]
         self.db.tekrarlayan_sil(id_)
         self._tekrarlayan_yenile()
+
+    # =========================================
+    # TASARRUF HEDEFLERİ SEKMESİ
+    # =========================================
+
+    def _tasarruf_olustur(self):
+        tab = self.tabview.tab("🎯 Tasarruf Hedefleri")
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            tab, text="Hedef tutar ve tarih belirleyip birikimini takip et",
+            font=("Segoe UI", 12), text_color="#94a3b8",
+        ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 5))
+
+        form = ctk.CTkFrame(tab, fg_color="transparent")
+        form.grid(row=1, column=0, sticky="ew", padx=15, pady=5)
+
+        self.h_ad = ctk.CTkEntry(form, width=180, placeholder_text="Hedef adı (örn: Tatil)")
+        self.h_ad.pack(side="left", padx=3)
+
+        self.h_tutar = ctk.CTkEntry(form, width=110, placeholder_text="Hedef Tutar")
+        tutar_bind(self.h_tutar)
+        self.h_tutar.pack(side="left", padx=3)
+
+        self.h_tarih = ctk.CTkEntry(form, width=110, placeholder_text="GG.AA.YYYY (ops.)")
+        tarih_bind(self.h_tarih)
+        self.h_tarih.pack(side="left", padx=3)
+
+        ctk.CTkButton(
+            form, text="🎯 Hedef Ekle", width=110, height=32,
+            fg_color="#9333ea", command=self._tasarruf_ekle,
+        ).pack(side="left", padx=5)
+
+        self.h_liste_frame = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        self.h_liste_frame.grid(row=2, column=0, sticky="nsew", padx=15, pady=(5, 15))
+        self.h_liste_frame.grid_columnconfigure(0, weight=1)
+
+        self._tasarruf_yenile()
+
+    def _tasarruf_ekle(self):
+        ad = self.h_ad.get().strip()
+        try:
+            tutar = tutar_oku(self.h_tutar)
+            if not ad or tutar <= 0:
+                raise ValueError
+        except (ValueError, AttributeError):
+            messagebox.showerror("Hata", "Hedef adı ve geçerli bir tutar girin.")
+            return
+        tarih = self.h_tarih.get().strip()
+        try:
+            self.db.tasarruf_hedefi_ekle(ad, tutar, tarih)
+        except Exception as e:
+            messagebox.showerror("Hata", f"Geçersiz tarih: {e}")
+            return
+        self.h_ad.delete(0, "end")
+        self.h_tutar.delete(0, "end")
+        self.h_tarih.delete(0, "end")
+        self._tasarruf_yenile()
+
+    def _tasarruf_yenile(self):
+        for widget in self.h_liste_frame.winfo_children():
+            widget.destroy()
+
+        hedefler = self.db.tasarruf_hedefleri_listele()
+        if not hedefler:
+            ctk.CTkLabel(
+                self.h_liste_frame, text="Henüz tasarruf hedefi eklenmedi.",
+                font=("Segoe UI", 12), text_color="#94a3b8",
+            ).pack(pady=20)
+            return
+
+        for h in hedefler:
+            oran = (
+                min(h["biriken_tutar"] / h["hedef_tutar"] * 100, 100)
+                if h["hedef_tutar"] > 0 else 0
+            )
+            renk = "#22c55e" if oran >= 90 else "#f59e0b" if oran >= 50 else "#ef4444"
+
+            kart = ctk.CTkFrame(self.h_liste_frame, corner_radius=12, fg_color="#0f172a")
+            kart.pack(fill="x", pady=6)
+
+            ust = ctk.CTkFrame(kart, fg_color="transparent")
+            ust.pack(fill="x", padx=12, pady=(10, 2))
+            baslik = h["ad"]
+            if h["hedef_tarih"]:
+                try:
+                    dt = datetime.strptime(h["hedef_tarih"], "%Y-%m-%d")
+                    baslik += f"  ·  🗓 {dt.strftime('%d.%m.%Y')}"
+                except ValueError:
+                    pass
+            ctk.CTkLabel(ust, text=baslik, font=("Segoe UI", 14, "bold")).pack(side="left")
+            ctk.CTkLabel(
+                ust, text=f"%{int(oran)}", font=("Segoe UI", 13, "bold"), text_color=renk,
+            ).pack(side="right")
+
+            bar_bg = ctk.CTkFrame(kart, height=16, fg_color="#1e293b", corner_radius=8)
+            bar_bg.pack(fill="x", padx=12, pady=4)
+            bar_fill = ctk.CTkFrame(bar_bg, height=16, fg_color=renk, corner_radius=8)
+            bar_fill.place(relx=0, rely=0, relheight=1, relwidth=min(oran / 100, 1))
+
+            alt = ctk.CTkFrame(kart, fg_color="transparent")
+            alt.pack(fill="x", padx=12, pady=(2, 10))
+            ctk.CTkLabel(
+                alt, text=f"{h['biriken_tutar']:,.2f} / {h['hedef_tutar']:,.2f} ₺",
+                font=("Segoe UI", 11), text_color="#94a3b8",
+            ).pack(side="left")
+
+            btn_frame = ctk.CTkFrame(alt, fg_color="transparent")
+            btn_frame.pack(side="right")
+            ctk.CTkButton(
+                btn_frame, text="+ Katkı", width=70, height=26,
+                fg_color="#0d9488", command=lambda h=h: self._tasarruf_katki_penceresi(h),
+            ).pack(side="left", padx=3)
+            ctk.CTkButton(
+                btn_frame, text="🗑", width=32, height=26,
+                fg_color="#c0392b", command=lambda h=h: self._tasarruf_sil(h["id"]),
+            ).pack(side="left", padx=3)
+
+    def _tasarruf_katki_penceresi(self, hedef):
+        pencere = ctk.CTkToplevel(self)
+        pencere.title("Katkı Ekle")
+        pencere.geometry("300x180")
+        pencere.transient(self.winfo_toplevel())
+        pencere.grab_set()
+        pencere.lift()
+        pencere.focus_force()
+
+        ctk.CTkLabel(
+            pencere, text=f"🎯 {hedef['ad']}", font=("Segoe UI", 16, "bold")
+        ).pack(pady=(16, 8))
+        tutar_entry = ctk.CTkEntry(pencere, width=200, placeholder_text="Tutar (₺)")
+        tutar_bind(tutar_entry)
+        tutar_entry.pack(pady=8)
+
+        def kaydet():
+            try:
+                tutar = tutar_oku(tutar_entry)
+            except ValueError:
+                messagebox.showerror("Hata", "Geçerli bir tutar girin.")
+                return
+            self.db.tasarruf_katki_ekle(hedef["id"], tutar)
+            pencere.destroy()
+            self._tasarruf_yenile()
+
+        ctk.CTkButton(pencere, text="💾 Ekle", width=180, command=kaydet).pack(pady=12)
+
+    def _tasarruf_sil(self, id_):
+        if not messagebox.askyesno("Sil", "Bu hedef silinsin mi?"):
+            return
+        self.db.tasarruf_hedefi_sil(id_)
+        self._tasarruf_yenile()
 
 
 # =========================================
