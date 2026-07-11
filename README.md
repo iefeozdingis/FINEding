@@ -5,7 +5,7 @@
 **Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-14%2F14%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-16%2F16%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
@@ -30,8 +30,10 @@ FINEding, tüm gelir-gider takibini **tek bir şık arayüzde**, **ücretsiz** v
 - **Akıllı uyarılar**: Bütçe aşımı ve yaklaşan limit bildirimleri
 - **Hızlı işlem**: 💰 +Gelir / 💸 +Gider popup (tutar yaz, Enter'la)
 - **Günlük/Haftalık filtre**: "Bugün", "Bu Hafta", "Tümü" butonları
-- **Arama & filtreleme**: Kategori, açıklama veya tutara göre anlık arama
+- **Arama & filtreleme**: Kategori, açıklama, etiket veya tutara göre anlık arama
+- **🔍 Global arama**: Ctrl+F ile tüm işlem ve borç/alacaklarda anında ara
 - **Dışa aktar**: Tek tıkla CSV 📄, Excel 📗, PDF 📕
+- **📥 İçe aktar**: CSV veya Excel dosyasından toplu işlem yükle
 
 ### 💰 Gelir & Gider Yönetimi
 - Gelir/gider kaydı ekle, düzenle, sil, geri al
@@ -137,6 +139,8 @@ python -m unittest discover -s tests -v
 ✅ test_budget_status_summary
 ✅ test_etiket
 ✅ test_gunluk_haftalik
+✅ test_import_csv
+✅ test_import_excel
 ✅ test_islem_log
 ✅ test_planlama
 ✅ test_search
@@ -146,7 +150,7 @@ python -m unittest discover -s tests -v
 ✅ test_user_authentication
 ✅ test_yillik_karsilastirma
 ─────────────────────────
-14 tests — ALL OK
+16 tests — ALL OK
 ```
 
 ---

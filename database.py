@@ -395,27 +395,82 @@ class Database:
     def import_csv(self, path: str) -> int:
         """CSV dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner."""
         eklenen = 0
-        with open(path, "r", encoding="utf-8") as dosya:
+        with open(path, "r", encoding="utf-8-sig") as dosya:
             reader = csv.DictReader(dosya)
             for satir in reader:
                 try:
-                    tarih = normalize_date(satir.get("tarih", ""))
-                    tur = satir.get("tur", "").strip()
-                    kategori = satir.get("kategori", "").strip()
-                    aciklama = satir.get("aciklama", "").strip() or None
-                    tutar = float(satir.get("tutar", "0"))
-                    if tur not in ("Gelir", "Gider"):
-                        continue
-                    self.cursor.execute(
-                        "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (tarih, tur, kategori, aciklama, tutar),
-                    )
-                    eklenen += 1
+                    eklenen += self._satir_ekle_guvenli(satir)
                 except (ValueError, KeyError):
                     continue
         self.conn.commit()
         return eklenen
+
+    def import_excel(self, path: str) -> int:
+        """Excel (.xlsx) dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner."""
+        from openpyxl import load_workbook
+
+        wb = load_workbook(path, read_only=True, data_only=True)
+        try:
+            ws = wb.active
+            satirlar = ws.iter_rows(values_only=True)
+            try:
+                baslik = [str(h).strip().lower() if h else "" for h in next(satirlar)]
+            except StopIteration:
+                return 0
+
+            # Türkçe/İngilizce başlık eşlemesi (ID/Tarih/Tür/Kategori/Açıklama/Tutar/Etiket)
+            eslesme = {
+                "tarih": "tarih", "date": "tarih",
+                "tür": "tur", "tur": "tur", "type": "tur",
+                "kategori": "kategori", "category": "kategori",
+                "açıklama": "aciklama", "aciklama": "aciklama", "description": "aciklama",
+                "tutar": "tutar", "amount": "tutar",
+                "etiket": "etiketler", "etiketler": "etiketler", "tags": "etiketler",
+            }
+            indeksler = {}
+            for i, h in enumerate(baslik):
+                if h in eslesme:
+                    indeksler[eslesme[h]] = i
+
+            eklenen = 0
+            for row in satirlar:
+                if row is None or all(v is None for v in row):
+                    continue
+                try:
+                    satir = {
+                        "tarih": row[indeksler["tarih"]] if "tarih" in indeksler else "",
+                        "tur": row[indeksler["tur"]] if "tur" in indeksler else "",
+                        "kategori": row[indeksler["kategori"]] if "kategori" in indeksler else "",
+                        "aciklama": row[indeksler["aciklama"]] if "aciklama" in indeksler else "",
+                        "tutar": row[indeksler["tutar"]] if "tutar" in indeksler else 0,
+                        "etiketler": row[indeksler["etiketler"]] if "etiketler" in indeksler else "",
+                    }
+                    eklenen += self._satir_ekle_guvenli(
+                        {k: ("" if v is None else str(v)) for k, v in satir.items()}
+                    )
+                except (ValueError, KeyError):
+                    continue
+            self.conn.commit()
+            return eklenen
+        finally:
+            wb.close()
+
+    def _satir_ekle_guvenli(self, satir: Dict[str, str]) -> int:
+        """CSV/Excel içe aktarımı için ortak satır doğrulama ve ekleme mantığı (commit çağırmaz)."""
+        tarih = normalize_date(satir.get("tarih", ""))
+        tur = satir.get("tur", "").strip()
+        kategori = satir.get("kategori", "").strip()
+        aciklama = satir.get("aciklama", "").strip() or None
+        tutar = float(satir.get("tutar", "0") or "0")
+        etiketler = satir.get("etiketler", "").strip()
+        if tur not in ("Gelir", "Gider") or not kategori:
+            return 0
+        self.cursor.execute(
+            "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, etiketler) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (tarih, tur, kategori, aciklama, tutar, etiketler),
+        )
+        return 1
 
     def kaydet_butce(self, ay: int, yil: int, kategori: str, tutar: float) -> None:
         self.cursor.execute(

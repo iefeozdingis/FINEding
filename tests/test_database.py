@@ -150,6 +150,39 @@ class DatabaseTests(unittest.TestCase):
         sonuc = self.db.islem_ara()
         self.assertEqual(len(sonuc), 2)
 
+    def test_import_csv(self):
+        """CSV içe aktarma testi."""
+        import csv as csv_mod
+        csv_yol = Path(self.temp_dir.name) / "islemler.csv"
+        with open(csv_yol, "w", newline="", encoding="utf-8") as f:
+            writer = csv_mod.writer(f)
+            writer.writerow(["tarih", "tur", "kategori", "aciklama", "tutar", "etiketler"])
+            writer.writerow(["01.07.2026", "Gelir", "Maaş", "İçe aktarılan", "2500", "test"])
+            writer.writerow(["02.07.2026", "Gider", "Market", "Alışveriş", "300", ""])
+            writer.writerow(["", "Geçersiz", "", "", "", ""])  # geçersiz satır, atlanmalı
+
+        eklenen = self.db.import_csv(str(csv_yol))
+        self.assertEqual(eklenen, 2)
+        sonuc = self.db.islem_ara("İçe aktarılan")
+        self.assertEqual(len(sonuc), 1)
+        self.assertEqual(sonuc[0][6], "test")
+
+    def test_import_excel(self):
+        """Excel içe aktarma testi."""
+        from openpyxl import Workbook
+        xlsx_yol = Path(self.temp_dir.name) / "islemler.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"])
+        ws.append(["03.07.2026", "Gider", "Kira", "Temmuz kirası", 9000, "ev"])
+        wb.save(xlsx_yol)
+
+        eklenen = self.db.import_excel(str(xlsx_yol))
+        self.assertEqual(eklenen, 1)
+        sonuc = self.db.islem_ara("Temmuz kirası")
+        self.assertEqual(len(sonuc), 1)
+        self.assertEqual(sonuc[0][6], "ev")
+
     def test_etiket(self):
         """İşlem etiketleme: ekleme, etikete göre arama ve güncelleme."""
         self.db.gelir_ekle("01.07.2026", "Maaş", "Ocak maaşı", 10000, "iş, önemli")

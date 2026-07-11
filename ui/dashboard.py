@@ -493,6 +493,23 @@ class Dashboard(ctk.CTkFrame):
             command=self._pdf_aktar,
         ).pack(side="left", padx=3)
 
+        ctk.CTkLabel(
+            export_frame,
+            text="   📥 İçe Aktar:",
+            font=("Segoe UI", 12),
+            text_color="#94a3b8",
+        ).pack(side="left", padx=(12, 8))
+
+        ctk.CTkButton(
+            export_frame,
+            text="CSV/Excel",
+            width=90,
+            height=28,
+            font=("Segoe UI", 11),
+            fg_color="#0d9488",
+            command=self._ice_aktar,
+        ).pack(side="left", padx=3)
+
     # ==========================
     # Dışa Aktar Metotları
     # ==========================
@@ -509,7 +526,7 @@ class Dashboard(ctk.CTkFrame):
         try:
             with open(yol, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.writer(f)
-                writer.writerow(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar"])
+                writer.writerow(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"])
                 for satir in self.db.islem_ara():
                     try:
                         from datetime import datetime
@@ -517,7 +534,8 @@ class Dashboard(ctk.CTkFrame):
                         tarih_goster = dt.strftime("%d.%m.%Y")
                     except Exception:
                         tarih_goster = satir[1]
-                    writer.writerow([satir[0], tarih_goster, satir[2], satir[3], satir[4], satir[5]])
+                    etiket = satir[6] if len(satir) > 6 else ""
+                    writer.writerow([satir[0], tarih_goster, satir[2], satir[3], satir[4], satir[5], etiket])
             messagebox.showinfo("Başarılı", f"CSV dışa aktarıldı:\n{yol}")
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -540,7 +558,7 @@ class Dashboard(ctk.CTkFrame):
             wb = Workbook()
             ws = wb.active
             ws.title = "İşlemler"
-            ws.append(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar"])
+            ws.append(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"])
             for satir in self.db.islem_ara():
                 ws.append(list(satir))
             wb.save(yol)
@@ -575,7 +593,7 @@ class Dashboard(ctk.CTkFrame):
             elemanlar.append(Paragraph("FINEding — İşlem Raporu", styles["Title"]))
             elemanlar.append(Spacer(1, 10 * mm))
 
-            veri = [["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar"]]
+            veri = [["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]]
             for satir in self.db.islem_ara():
                 veri.append([str(s) for s in satir])
 
@@ -593,6 +611,36 @@ class Dashboard(ctk.CTkFrame):
             messagebox.showinfo("Başarılı", f"PDF dışa aktarıldı:\n{yol}")
         except Exception as e:
             messagebox.showerror("Hata", str(e))
+
+    def _ice_aktar(self):
+        """CSV veya Excel dosyasından toplu işlem içe aktarır."""
+        from tkinter import filedialog
+
+        yol = filedialog.askopenfilename(
+            filetypes=[("CSV veya Excel", "*.csv *.xlsx"), ("CSV", "*.csv"), ("Excel", "*.xlsx")]
+        )
+        if not yol:
+            return
+
+        beklenen = (
+            "Beklenen sütunlar: Tarih, Tür (Gelir/Gider), Kategori, "
+            "Açıklama, Tutar, Etiket (opsiyonel)."
+        )
+        if not messagebox.askyesno(
+            "İçe Aktar",
+            f"'{yol}' dosyasındaki işlemler eklenecek. Devam edilsin mi?\n\n{beklenen}",
+        ):
+            return
+
+        try:
+            if yol.lower().endswith(".xlsx"):
+                eklenen = self.db.import_excel(yol)
+            else:
+                eklenen = self.db.import_csv(yol)
+            messagebox.showinfo("Başarılı", f"{eklenen} işlem içe aktarıldı.")
+            self.yenile()
+        except Exception as e:
+            messagebox.showerror("Hata", f"İçe aktarma başarısız: {e}")
 
     # ==========================
     # Seçili İşlemi Sil
