@@ -485,19 +485,25 @@ class FinedingApp(ctk.CTk):
 
     def cikis(self):
         """X tuşuna basınca kapatmak yerine tepsiye küçült."""
-        self.withdraw()
-        if HAS_TRAY:
-            from plyer import notification
+        if not HAS_TRAY or not self.tray_icon:
+            # Tepsi ikonu yoksa pencereyi gizlemenin geri dönüşü olmaz —
+            # gerçekten kapat, aksi halde uygulama görünmez şekilde
+            # arka planda takılı kalır.
+            self._gercek_cikis()
+            return
 
-            try:
-                notification.notify(
-                    title="Fineding",
-                    message="Arka planda çalışmaya devam ediyor.\nTamamen kapatmak için tepsi simgesine sağ tıklayın.",
-                    app_name="Fineding",
-                    timeout=4,
-                )
-            except Exception:
-                pass
+        self.withdraw()
+        from plyer import notification
+
+        try:
+            notification.notify(
+                title="Fineding",
+                message="Arka planda çalışmaya devam ediyor.\nTamamen kapatmak için tepsi simgesine sağ tıklayın.",
+                app_name="Fineding",
+                timeout=4,
+            )
+        except Exception:
+            pass
 
     def _gercek_cikis(self):
         """Tamamen kapat."""
@@ -519,6 +525,7 @@ class FinedingApp(ctk.CTk):
             for eski in yedekler[10:]:
                 try:
                     Path(eski).unlink()
+                    Path(eski + ".sha256").unlink(missing_ok=True)
                 except Exception:
                     pass
         except Exception:
