@@ -204,10 +204,16 @@ FINEding/
 
 ## 🩹 Son Düzeltmeler (2026-07-12)
 
+- **⚠️ Eski (SHA-256) şifreler artık doğrulanamıyordu:** bcrypt eklendikten sonra, bcrypt öncesi oluşturulmuş hesapların şifreleri hiçbir zaman eşleşmiyordu — bu hesaplar kilitli kalıyordu. Eski hash formatı için ayrı doğrulama yolu eklendi.
 - **⚠️ Manuel yedekleme veri kaybediyordu:** `Yedek Oluştur` butonu, WAL modundaki veritabanını checkpoint yapmadan kopyalıyordu — uygulama kapatılmadan alınan yedekler tabloları bile içermeyebiliyordu. Artık kopyalamadan önce checkpoint zorlanıyor.
+- **"Geri Al" işlemi etiketleri siliyordu:** silinen bir işlem geri alındığında etiket/not bilgisi kayboluyordu; artık korunuyor.
+- **X'e basınca tepsi simgesi yoksa uygulama arka planda takılı kalıyordu:** tepsi desteği olmayan/başarısız olan durumlarda artık gerçekten kapanıyor.
+- **Yedek temizliğinde `.sha256` dosyaları birikiyordu:** eski yedekler silinirken eşlik eden checksum dosyaları artık birlikte siliniyor.
+- **Tema tercihi kalıcı değildi:** uygulama her açılışta koyu temayla başlıyordu; artık son seçilen tema hatırlanıyor.
 - **Admin şifre sıfırlama diyalogunda yeni şifre açık metin görünüyordu:** maskelendi.
+- Kullanılmayan `ui/raporlar.py` (ölü kod) kaldırıldı.
 - Planlama → Tekrarlayan sekmesi açılmıyordu, Bütçe sayfası tema hatası veriyordu, Bakiye widget'ı hiç görünmüyordu — hepsi çözüldü.
-- Tüm sayfalar hatasız açılıyor; 18/18 test yeşil.
+- Tüm sayfalar hatasız açılıyor; 20/20 test yeşil.
 
 ## 📝 Geliştirici Notları
 
