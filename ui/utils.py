@@ -78,14 +78,15 @@ def tarih_formatla(event=None):
     ):
         return
 
-    metin = "".join(c for c in widget.get() if c.isdigit())
+    eski_metin = widget.get()
+    eski_pos = widget.index("insert")
+
+    metin = "".join(c for c in eski_metin if c.isdigit())
     if not metin:
         # Sadece noktalar varsa tamamen temizle
-        if widget.get().replace(".", "").strip() == "":
+        if eski_metin.replace(".", "").strip() == "":
             widget.delete(0, "end")
         return
-
-    eski_pos = widget.index("insert")
 
     if len(metin) <= 2:
         yeni = metin
@@ -98,7 +99,7 @@ def tarih_formatla(event=None):
     widget.insert(0, yeni)
 
     # Cursor'ı mümkün olduğunca eski yerine yakın tut
-    dot_sayisi_eski = widget.get()[:eski_pos].count(".")
+    dot_sayisi_eski = eski_metin[:eski_pos].count(".")
     yeni_pos = eski_pos
     if dot_sayisi_eski < yeni[:eski_pos].count("."):
         yeni_pos += 1
