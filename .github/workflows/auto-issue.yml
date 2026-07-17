@@ -2,7 +2,7 @@ name: 🤖 Otomatik Issue Yönetimi
 
 on:
   workflow_run:
-    workflows: ["CI", "Python Tests"]
+    workflows: ["CI"]
     types:
       - completed
   issues:

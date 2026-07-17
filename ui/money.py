@@ -4,6 +4,8 @@ Bu modül bilinçli olarak tkinter/customtkinter'a bağımlı değildir; böylec
 para mantığı headless ortamda (CI dahil) test edilebilir.
 """
 
+from typing import Optional
+
 
 def para_parse(metin: str) -> float:
     """Kullanıcı girdisindeki tutarı güvenle float'a çevirir.
@@ -22,6 +24,7 @@ def para_parse(metin: str) -> float:
 
     son_nokta = ham.rfind(".")
     son_virgul = ham.rfind(",")
+    ondalik: Optional[str]
     if son_nokta != -1 and son_virgul != -1:
         # İki ayraç da varsa sonda olan ondalık ayracıdır
         ondalik = "." if son_nokta > son_virgul else ","

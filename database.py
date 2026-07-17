@@ -1576,6 +1576,7 @@ class Database:
              self.aktif_kullanici_id),
         )
         self.conn.commit()
+        assert self.cursor.lastrowid is not None
         return self.cursor.lastrowid
 
     def tasarruf_hedefleri_listele(self) -> List[Dict[str, Any]]:

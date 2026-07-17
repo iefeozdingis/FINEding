@@ -1,7 +1,10 @@
-import tkinter as tk
 import unittest
 
-from ui.utils import tarih_formatla
+try:
+    import tkinter as tk
+    _TK_VAR = True
+except ImportError:
+    _TK_VAR = False
 
 
 class FakeEvent:
@@ -12,6 +15,7 @@ class FakeEvent:
 
 def _tarih_yaz(entry, metin):
     """Bir Entry'ye karakter karakter yazarak gerçek kullanıcı girdisini simüle eder."""
+    from ui.utils import tarih_formatla
     for karakter in metin:
         pos = entry.index("insert")
         entry.insert(pos, karakter)
@@ -19,10 +23,15 @@ def _tarih_yaz(entry, metin):
         tarih_formatla(FakeEvent(entry, karakter))
 
 
+@unittest.skipUnless(_TK_VAR, "tkinter kurulu değil")
 class TestTarihFormatla(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.root = tk.Tk()
+        try:
+            cls.root = tk.Tk()
+        except tk.TclError as e:
+            # Ekran/DISPLAY yoksa (xvfb'siz headless) testi atla, hata verme
+            raise unittest.SkipTest(f"Tk başlatılamadı: {e}")
         cls.root.withdraw()
 
     @classmethod
