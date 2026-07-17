@@ -47,8 +47,8 @@ class DatabaseTests(unittest.TestCase):
 
     def test_user_authentication(self):
         # İlk kullanıcıyı oluştur (admin)
-        self.assertTrue(self.db.kullanici_kaydet("admin", "admin", "Yönetici"))
-        kullanici = self.db.kullanici_dogrula("admin", "admin")
+        self.assertTrue(self.db.kullanici_kaydet("admin", "admin123", "Yönetici"))
+        kullanici = self.db.kullanici_dogrula("admin", "admin123")
         self.assertIsNotNone(kullanici)
         assert kullanici is not None
         self.assertEqual(kullanici["kullanici_adi"], "admin")
@@ -56,26 +56,66 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(self.db.kullanici_admin_mi(kullanici["id"]))
 
         # Yanlış şifre
-        self.assertIsNone(self.db.kullanici_dogrula("admin", "yanlis"))
+        self.assertIsNone(self.db.kullanici_dogrula("admin", "yanlis123"))
 
         # Yeni kullanıcı
-        self.assertTrue(self.db.kullanici_kaydet("test", "12345", "Test Kullanıcı"))
-        self.assertFalse(self.db.kullanici_kaydet("test", "12345", "Dup"))
+        self.assertTrue(self.db.kullanici_kaydet("test", "test1234", "Test Kullanıcı"))
+        self.assertFalse(self.db.kullanici_kaydet("test", "test1234", "Dup"))
 
-        k = self.db.kullanici_dogrula("test", "12345")
+        k = self.db.kullanici_dogrula("test", "test1234")
         self.assertIsNotNone(k)
         assert k is not None
         self.assertEqual(k["ad_soyad"], "Test Kullanıcı")
 
-        # Şifre değiştir
+        # Şifre değiştir (admin başkasının şifresini değiştirebilir)
         self.db.kullanici_sifre_degistir(k["id"], "yenisifre")
-        self.assertIsNone(self.db.kullanici_dogrula("test", "12345"))
+        self.assertIsNone(self.db.kullanici_dogrula("test", "test1234"))
         self.assertIsNotNone(self.db.kullanici_dogrula("test", "yenisifre"))
 
         # Admin kendini silemez
         self.assertFalse(self.db.kullanici_sil(1))
         # Normal kullanıcı silinebilir
         self.assertTrue(self.db.kullanici_sil(k["id"]))
+
+    def test_sifre_politikasi(self):
+        """Kısa şifreler veri katmanında reddedilmeli (#38)."""
+        with self.assertRaises(ValueError):
+            self.db.kullanici_kaydet("kisa", "123", "Kısa")
+
+    def test_yetki_kontrolu(self):
+        """Admin olmayan kullanıcı silme/başkasının şifresini değiştiremez (#6)."""
+        import database as dbm
+        self.db.kullanici_kaydet("admin", "admin123", "Admin")
+        self.db.kullanici_kaydet("ayse", "ayse1234", "Ayşe")
+        # Aktif kullanıcıyı normal kullanıcıya (id=2) çevir
+        self.db.oturum_ac(2)
+        with self.assertRaises(dbm.YetkiHatasi):
+            self.db.kullanici_sil(1)
+        with self.assertRaises(dbm.YetkiHatasi):
+            self.db.kullanici_sifre_degistir(1, "baskasinin")
+        # Kendi şifresini değiştirebilir
+        self.db.kullanici_sifre_degistir(2, "yenisifre")
+
+    def test_kullanici_izolasyonu(self):
+        """Her kullanıcı yalnızca kendi işlemlerini görmeli (#1)."""
+        self.db.oturum_ac(1)
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Admin geliri", 5000)
+        self.db.oturum_ac(2)
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Ayşe geliri", 3000)
+
+        self.assertEqual(len(self.db.tum_islemler()), 1)
+        self.assertEqual(self.db.toplam_gelir(), 3000.0)
+        self.db.oturum_ac(1)
+        self.assertEqual(len(self.db.tum_islemler()), 1)
+        self.assertEqual(self.db.toplam_gelir(), 5000.0)
+        # Kullanıcı 1, kullanıcı 2'nin işlemini silememeli
+        ayse_islem = None
+        self.db.oturum_ac(2)
+        ayse_islem = self.db.tum_islemler()[0][0]
+        self.db.oturum_ac(1)
+        self.db.sil(ayse_islem)  # başka kullanıcının kaydı — etkisiz
+        self.db.oturum_ac(2)
+        self.assertEqual(len(self.db.tum_islemler()), 1)
 
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)

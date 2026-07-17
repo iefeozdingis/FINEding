@@ -76,17 +76,44 @@ def normalize_date(tarih_str: str) -> str:
 
 
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Minimum şifre uzunluğu (veri katmanında zorlanır)
+MIN_SIFRE_UZUNLUK = 8
+
+
+class YetkiHatasi(Exception):
+    """Yetkisiz bir yönetim işlemi denendiğinde fırlatılır."""
+
+
+# Kullanıcıya ait finans tabloları (izolasyon için kullanici_id taşır)
+_KULLANICI_TABLOLARI = (
+    "islemler",
+    "butceler",
+    "borclar",
+    "planlanan",
+    "tasarruf_hedefleri",
+    "tekrarlayan",
+)
 
 
 class Database:
-    def __init__(self) -> None:
+    def __init__(self, kullanici_id: int = 1) -> None:
         self.conn = self._baglan()
         self.cursor = self.conn.cursor()
         self._son_silinen: Optional[Tuple[Any, ...]] = None
+        # Aktif oturum kullanıcısı — tüm finans sorguları bununla filtrelenir.
+        # Varsayılan 1 (ilk/admin kullanıcı); giriş sonrası oturum_ac ile
+        # gerçek kullanıcıya ayarlanır.
+        self.aktif_kullanici_id = kullanici_id
         self.create_tables()
         self._migrate()
         self._index_olustur()
+
+    def oturum_ac(self, kullanici_id: int) -> None:
+        """Aktif oturum kullanıcısını ayarlar; sonraki tüm sorgular bu
+        kullanıcının verisiyle sınırlanır."""
+        self.aktif_kullanici_id = int(kullanici_id)
 
     @staticmethod
     def _baglan() -> sqlite3.Connection:
@@ -111,8 +138,61 @@ class Database:
         mevcut = self.conn.execute("PRAGMA user_version").fetchone()[0]
         if mevcut < 1:
             self._migrate_borc_tarihleri()
+        if mevcut < 2:
+            self._migrate_kullanici_id()
+        if mevcut < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.conn.commit()
+
+    def _migrate_kullanici_id(self) -> None:
+        """Finans tablolarına kullanici_id kolonu ekler; mevcut tüm veriyi
+        ilk kullanıcıya (admin, id=1) atar. Böylece çok kullanıcılı giriş
+        artık gerçek veri izolasyonu sağlar (önceden tüm kullanıcılar aynı
+        havuzu görüyordu)."""
+        for tablo in _KULLANICI_TABLOLARI:
+            if tablo == "butceler":
+                continue  # aşağıda özel olarak yeniden yapılandırılır
+            kolonlar = {
+                r[1]
+                for r in self.conn.execute(f"PRAGMA table_info({tablo})").fetchall()
+            }
+            if "kullanici_id" not in kolonlar:
+                self.conn.execute(
+                    f"ALTER TABLE {tablo} ADD COLUMN kullanici_id INTEGER DEFAULT 1"
+                )
+                self.conn.execute(
+                    f"UPDATE {tablo} SET kullanici_id=1 WHERE kullanici_id IS NULL"
+                )
+        self._migrate_butce_kullanici()
+        self.conn.commit()
+
+    def _migrate_butce_kullanici(self) -> None:
+        """butceler'in UNIQUE kısıtı (ay,yil,kategori) kullanıcı izolasyonunu
+        engelliyordu; (ay,yil,kategori,kullanici_id) olacak şekilde tabloyu
+        yeniden kurar ve mevcut satırları admin'e (id=1) atar."""
+        kolonlar = {
+            r[1]
+            for r in self.conn.execute("PRAGMA table_info(butceler)").fetchall()
+        }
+        if "kullanici_id" in kolonlar:
+            return  # zaten yeni şema
+        self.conn.executescript(
+            """
+            ALTER TABLE butceler RENAME TO butceler_eski;
+            CREATE TABLE butceler(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ay INTEGER NOT NULL,
+                yil INTEGER NOT NULL,
+                kategori TEXT NOT NULL,
+                tutar REAL NOT NULL,
+                kullanici_id INTEGER DEFAULT 1,
+                UNIQUE(ay, yil, kategori, kullanici_id)
+            );
+            INSERT INTO butceler (id, ay, yil, kategori, tutar, kullanici_id)
+                SELECT id, ay, yil, kategori, tutar, 1 FROM butceler_eski;
+            DROP TABLE butceler_eski;
+            """
+        )
 
     def _migrate_borc_tarihleri(self) -> None:
         """Eski GG.AA.YYYY borç tarihlerini ISO YYYY-MM-DD'ye çevirir."""
@@ -146,6 +226,10 @@ class Database:
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_islemler_tur_tarih "
             "ON islemler(tur, tarih)"
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_islemler_kullanici "
+            "ON islemler(kullanici_id)"
         )
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_islemler_kategori "
@@ -192,7 +276,8 @@ class Database:
             yil INTEGER NOT NULL,
             kategori TEXT NOT NULL,
             tutar REAL NOT NULL,
-            UNIQUE(ay, yil, kategori)
+            kullanici_id INTEGER DEFAULT 1,
+            UNIQUE(ay, yil, kategori, kullanici_id)
         )
         """)
 
@@ -319,12 +404,13 @@ class Database:
         self.cursor.execute(
             """
         INSERT INTO islemler
-        (tarih,tur,kategori,aciklama,tutar,etiketler)
+        (tarih,tur,kategori,aciklama,tutar,etiketler,kullanici_id)
 
-        VALUES (?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gelir", kategori, aciklama, para_yuvarla(tutar), etiketler),
+            (tarih_iso, "Gelir", kategori, aciklama, para_yuvarla(tutar),
+             etiketler, self.aktif_kullanici_id),
         )
         self._log_islem("gelir_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
         self.conn.commit()
@@ -341,12 +427,13 @@ class Database:
         self.cursor.execute(
             """
         INSERT INTO islemler
-        (tarih,tur,kategori,aciklama,tutar,etiketler)
+        (tarih,tur,kategori,aciklama,tutar,etiketler,kullanici_id)
 
-        VALUES (?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gider", kategori, aciklama, para_yuvarla(tutar), etiketler),
+            (tarih_iso, "Gider", kategori, aciklama, para_yuvarla(tutar),
+             etiketler, self.aktif_kullanici_id),
         )
         self._log_islem("gider_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
         self.conn.commit()
@@ -356,25 +443,29 @@ class Database:
     # ==========================
 
     def tum_islemler(self) -> List[Tuple[Any, ...]]:
-        self.cursor.execute("""
-        SELECT *
-
-        FROM islemler
-
-        ORDER BY id DESC
-        """)
-
+        self.cursor.execute(
+            "SELECT * FROM islemler WHERE kullanici_id=? ORDER BY id DESC",
+            (self.aktif_kullanici_id,),
+        )
         return self.cursor.fetchall()
 
     def tum_islem_sayisi(self) -> int:
-        self.cursor.execute("SELECT COUNT(*) FROM islemler")
+        self.cursor.execute(
+            "SELECT COUNT(*) FROM islemler WHERE kullanici_id=?",
+            (self.aktif_kullanici_id,),
+        )
         row = self.cursor.fetchone()
         return row[0] if row else 0
 
-    def islem_ara(self, arama: str = "", tur: str = "") -> List[Tuple[Any, ...]]:
-        """Belirtilen metin ve türe göre işlemleri filtreleyerek arar."""
-        sorgu = "SELECT * FROM islemler WHERE 1=1"
-        params: List[Any] = []
+    def islem_ara(
+        self, arama: str = "", tur: str = "", limit: Optional[int] = None
+    ) -> List[Tuple[Any, ...]]:
+        """Belirtilen metin ve türe göre işlemleri filtreleyerek arar.
+
+        limit verilirse en yeni N kayıt döner (dashboard performansı için).
+        """
+        sorgu = "SELECT * FROM islemler WHERE kullanici_id=?"
+        params: List[Any] = [self.aktif_kullanici_id]
         if arama:
             sorgu += (
                 " AND (kategori LIKE ? ESCAPE '\\' OR aciklama LIKE ? ESCAPE '\\'"
@@ -389,6 +480,9 @@ class Database:
             sorgu += " AND tur=?"
             params.append(tur)
         sorgu += " ORDER BY id DESC"
+        if limit is not None:
+            sorgu += " LIMIT ?"
+            params.append(int(limit))
         self.cursor.execute(sorgu, tuple(params))
         return self.cursor.fetchall()
 
@@ -404,23 +498,24 @@ class Database:
     ) -> None:
         tarih_iso = normalize_date(tarih)
         tutar = para_yuvarla(tutar)
+        uid = self.aktif_kullanici_id
         if etiketler is None:
             self.cursor.execute(
                 """
             UPDATE islemler
             SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?
-            WHERE id=?
+            WHERE id=? AND kullanici_id=?
             """,
-                (tarih_iso, tur, kategori, aciklama, tutar, id),
+                (tarih_iso, tur, kategori, aciklama, tutar, id, uid),
             )
         else:
             self.cursor.execute(
                 """
             UPDATE islemler
             SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?, etiketler=?
-            WHERE id=?
+            WHERE id=? AND kullanici_id=?
             """,
-                (tarih_iso, tur, kategori, aciklama, tutar, etiketler, id),
+                (tarih_iso, tur, kategori, aciklama, tutar, etiketler, id, uid),
             )
         self._log_islem("guncelle", id, f"{kategori}: {tutar}")
         self.conn.commit()
@@ -432,10 +527,10 @@ class Database:
             """
         SELECT *
         FROM islemler
-        WHERE tarih BETWEEN ? AND ?
+        WHERE kullanici_id=? AND tarih BETWEEN ? AND ?
         ORDER BY id DESC
         """,
-            (bas_iso, bit_iso),
+            (self.aktif_kullanici_id, bas_iso, bit_iso),
         )
         return self.cursor.fetchall()
 
@@ -446,9 +541,9 @@ class Database:
             """
         SELECT IFNULL(SUM(tutar),0)
         FROM islemler
-        WHERE tur='Gelir' AND tarih BETWEEN ? AND ?
+        WHERE kullanici_id=? AND tur='Gelir' AND tarih BETWEEN ? AND ?
         """,
-            (bas_iso, bit_iso),
+            (self.aktif_kullanici_id, bas_iso, bit_iso),
         )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
@@ -461,39 +556,40 @@ class Database:
             """
         SELECT IFNULL(SUM(tutar),0)
         FROM islemler
-        WHERE tur='Gider' AND tarih BETWEEN ? AND ?
+        WHERE kullanici_id=? AND tur='Gider' AND tarih BETWEEN ? AND ?
         """,
-            (bas_iso, bit_iso),
+            (self.aktif_kullanici_id, bas_iso, bit_iso),
         )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
         return float(val)
 
     def kategori_toplamlari(self, tur: Optional[str] = None) -> List[Tuple[str, float]]:
-        sorgu = "SELECT kategori, SUM(tutar) FROM islemler"
-        kosullar = []
+        sorgu = "SELECT kategori, SUM(tutar) FROM islemler WHERE kullanici_id=?"
+        kosullar: List[Any] = [self.aktif_kullanici_id]
         if tur:
-            sorgu += " WHERE tur=?"
+            sorgu += " AND tur=?"
             kosullar.append(tur)
         sorgu += " GROUP BY kategori ORDER BY SUM(tutar) DESC"
-        if kosullar:
-            self.cursor.execute(sorgu, tuple(kosullar))
-        else:
-            self.cursor.execute(sorgu)
+        self.cursor.execute(sorgu, tuple(kosullar))
         return self.cursor.fetchall()
 
     def aylik_ozet(self) -> List[Tuple[str, float, float]]:
         """(ay, gelir_toplam, gider_toplam) listesi döner. Son 12 ay."""
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
         SELECT
             strftime('%Y-%m', tarih) AS ay,
             SUM(CASE WHEN tur='Gelir' THEN tutar ELSE 0 END),
             SUM(CASE WHEN tur='Gider' THEN tutar ELSE 0 END)
         FROM islemler
+        WHERE kullanici_id=?
         GROUP BY ay
         ORDER BY ay DESC
         LIMIT 12
-        """)
+        """,
+            (self.aktif_kullanici_id,),
+        )
         return [(r[0], float(r[1]), float(r[2])) for r in self.cursor.fetchall()]
 
     def export_csv(self, path: str) -> None:
@@ -610,20 +706,22 @@ class Database:
         if tur not in ("Gelir", "Gider") or not kategori:
             return 0
         self.cursor.execute(
-            "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, etiketler) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (tarih, tur, kategori, aciklama, tutar, etiketler),
+            "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
+            "etiketler, kullanici_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (tarih, tur, kategori, aciklama, tutar, etiketler,
+             self.aktif_kullanici_id),
         )
         return 1
 
     def kaydet_butce(self, ay: int, yil: int, kategori: str, tutar: float) -> None:
         self.cursor.execute(
             """
-        INSERT INTO butceler (ay, yil, kategori, tutar)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(ay, yil, kategori) DO UPDATE SET tutar=excluded.tutar
+        INSERT INTO butceler (ay, yil, kategori, tutar, kullanici_id)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(ay, yil, kategori, kullanici_id)
+            DO UPDATE SET tutar=excluded.tutar
         """,
-            (ay, yil, kategori, para_yuvarla(tutar)),
+            (ay, yil, kategori, para_yuvarla(tutar), self.aktif_kullanici_id),
         )
         self.conn.commit()
 
@@ -631,10 +729,10 @@ class Database:
         self.cursor.execute(
             """
         SELECT kategori, tutar FROM butceler
-        WHERE ay=? AND yil=?
+        WHERE ay=? AND yil=? AND kullanici_id=?
         ORDER BY kategori
         """,
-            (ay, yil),
+            (ay, yil, self.aktif_kullanici_id),
         )
         return self.cursor.fetchall()
 
@@ -650,13 +748,14 @@ class Database:
             ) AS harcanan
         FROM butceler b
         LEFT JOIN islemler i ON i.kategori = b.kategori
+        AND i.kullanici_id = b.kullanici_id
         AND strftime('%m', i.tarih) = printf('%02d', b.ay)
         AND strftime('%Y', i.tarih) = b.yil
-        WHERE b.ay=? AND b.yil=?
+        WHERE b.ay=? AND b.yil=? AND b.kullanici_id=?
         GROUP BY b.kategori, b.tutar
         ORDER BY b.kategori
         """,
-            (ay, yil),
+            (ay, yil, self.aktif_kullanici_id),
         )
         sonuc = []
         for kategori, butce, harcanan in self.cursor.fetchall():
@@ -768,14 +867,11 @@ class Database:
     # ==========================
 
     def toplam_gelir(self) -> float:
-        self.cursor.execute("""
-        SELECT IFNULL(SUM(tutar),0)
-
-        FROM islemler
-
-        WHERE tur='Gelir'
-        """)
-
+        self.cursor.execute(
+            "SELECT IFNULL(SUM(tutar),0) FROM islemler "
+            "WHERE tur='Gelir' AND kullanici_id=?",
+            (self.aktif_kullanici_id,),
+        )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
         return float(val)
@@ -785,14 +881,11 @@ class Database:
     # ==========================
 
     def toplam_gider(self) -> float:
-        self.cursor.execute("""
-        SELECT IFNULL(SUM(tutar),0)
-
-        FROM islemler
-
-        WHERE tur='Gider'
-        """)
-
+        self.cursor.execute(
+            "SELECT IFNULL(SUM(tutar),0) FROM islemler "
+            "WHERE tur='Gider' AND kullanici_id=?",
+            (self.aktif_kullanici_id,),
+        )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
         return float(val)
@@ -809,10 +902,19 @@ class Database:
     # ==========================
 
     def sil(self, islem_id: int) -> None:
-        # Silmeden önce kaydı sakla (geri almak için)
-        self.cursor.execute("SELECT * FROM islemler WHERE id=?", (islem_id,))
+        # Silmeden önce kaydı sakla (geri almak için) — sadece aktif
+        # kullanıcının işlemi silinebilir (başka kullanıcının verisine dokunmaz)
+        self.cursor.execute(
+            "SELECT * FROM islemler WHERE id=? AND kullanici_id=?",
+            (islem_id, self.aktif_kullanici_id),
+        )
         self._son_silinen = self.cursor.fetchone()
-        self.cursor.execute("DELETE FROM islemler WHERE id=?", (islem_id,))
+        if self._son_silinen is None:
+            return
+        self.cursor.execute(
+            "DELETE FROM islemler WHERE id=? AND kullanici_id=?",
+            (islem_id, self.aktif_kullanici_id),
+        )
         self._log_islem("sil", islem_id, "İşlem silindi")
         self.conn.commit()
 
@@ -823,7 +925,15 @@ class Database:
         try:
             self.cursor.execute("BEGIN")
             veri = self._son_silinen
-            if len(veri) >= 7:
+            # SELECT * artık kullanici_id'yi de içerir (8. sütun); onu da
+            # koruyarak geri ekle, yoksa geri alınan kayıt admin'e (1) düşer.
+            if len(veri) >= 8:
+                self.cursor.execute(
+                    "INSERT INTO islemler (id, tarih, tur, kategori, aciklama, "
+                    "tutar, etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?,?)",
+                    veri[:8],
+                )
+            elif len(veri) >= 7:
                 self.cursor.execute(
                     "INSERT INTO islemler "
                     "(id, tarih, tur, kategori, aciklama, tutar, etiketler) "
@@ -852,9 +962,10 @@ class Database:
         self, ay: int, yil: int, kategori: str, tur: str, aciklama: str, tutar: float
     ) -> int:
         self.cursor.execute(
-            "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, tutar) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (ay, yil, kategori, tur, aciklama, para_yuvarla(tutar)),
+            "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, tutar, "
+            "kullanici_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (ay, yil, kategori, tur, aciklama, para_yuvarla(tutar),
+             self.aktif_kullanici_id),
         )
         self.conn.commit()
         assert self.cursor.lastrowid is not None
@@ -864,19 +975,25 @@ class Database:
         self, id: int, kategori: str, tur: str, aciklama: str, tutar: float
     ) -> None:
         self.cursor.execute(
-            "UPDATE planlanan SET kategori=?, tur=?, aciklama=?, tutar=? " "WHERE id=?",
-            (kategori, tur, aciklama, para_yuvarla(tutar), id),
+            "UPDATE planlanan SET kategori=?, tur=?, aciklama=?, tutar=? "
+            "WHERE id=? AND kullanici_id=?",
+            (kategori, tur, aciklama, para_yuvarla(tutar), id,
+             self.aktif_kullanici_id),
         )
         self.conn.commit()
 
     def planlanan_sil(self, id: int) -> None:
-        self.cursor.execute("DELETE FROM planlanan WHERE id=?", (id,))
+        self.cursor.execute(
+            "DELETE FROM planlanan WHERE id=? AND kullanici_id=?",
+            (id, self.aktif_kullanici_id),
+        )
         self.conn.commit()
 
     def planlanan_listele(self, ay: int, yil: int) -> List[Tuple[Any, ...]]:
         self.cursor.execute(
-            "SELECT * FROM planlanan WHERE ay=? AND yil=? ORDER BY tur, kategori",
-            (ay, yil),
+            "SELECT * FROM planlanan WHERE ay=? AND yil=? AND kullanici_id=? "
+            "ORDER BY tur, kategori",
+            (ay, yil, self.aktif_kullanici_id),
         )
         return self.cursor.fetchall()
 
@@ -888,10 +1005,12 @@ class Database:
         {'aktarilan': N, 'atlanan': M} döner.
         """
         tarih_iso = normalize_date(tarih)
+        uid = self.aktif_kullanici_id
         self.cursor.execute(
             "SELECT id, kategori, tur, aciklama, tutar, "
-            "COALESCE(aktarim_tarihi,'') FROM planlanan WHERE ay=? AND yil=?",
-            (ay, yil),
+            "COALESCE(aktarim_tarihi,'') FROM planlanan "
+            "WHERE ay=? AND yil=? AND kullanici_id=?",
+            (ay, yil, uid),
         )
         satirlar = self.cursor.fetchall()
         aktarilan = 0
@@ -904,12 +1023,13 @@ class Database:
             islem_tur = "Gelir" if tur == "Gelir" else "Gider"
             self.cursor.execute(
                 "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
-                "etiketler) VALUES (?,?,?,?,?,?)",
+                "etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
                 (tarih_iso, islem_tur, kategori, aciklama or "",
-                 para_yuvarla(tutar), "plan"),
+                 para_yuvarla(tutar), "plan", uid),
             )
             self.cursor.execute(
-                "UPDATE planlanan SET aktarim_tarihi=? WHERE id=?", (bugun, pid)
+                "UPDATE planlanan SET aktarim_tarihi=? WHERE id=? AND kullanici_id=?",
+                (bugun, pid, uid),
             )
             aktarilan += 1
         self.conn.commit()
@@ -917,9 +1037,9 @@ class Database:
 
     def planlanan_ozet(self, ay: int, yil: int) -> Dict[str, float]:
         self.cursor.execute(
-            "SELECT tur, SUM(tutar) FROM planlanan WHERE ay=? AND yil=? "
-            "GROUP BY tur",
-            (ay, yil),
+            "SELECT tur, SUM(tutar) FROM planlanan "
+            "WHERE ay=? AND yil=? AND kullanici_id=? GROUP BY tur",
+            (ay, yil, self.aktif_kullanici_id),
         )
         sonuc = {"Gelir": 0.0, "Gider": 0.0}
         for tur, toplam in self.cursor.fetchall():
@@ -947,10 +1067,10 @@ class Database:
         vade_iso = normalize_date(vade) if vade else ""
         self.cursor.execute(
             "INSERT INTO borclar (tur, aciklama, kisi, toplam_tutar, "
-            "kalan_tutar, baslangic_tarih, vade_tarih, durum) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'Aktif')",
+            "kalan_tutar, baslangic_tarih, vade_tarih, durum, kullanici_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'Aktif', ?)",
             (tur, aciklama, kisi, para_yuvarla(toplam), para_yuvarla(kalan),
-             bas_iso, vade_iso),
+             bas_iso, vade_iso, self.aktif_kullanici_id),
         )
         self.conn.commit()
         assert self.cursor.lastrowid is not None
@@ -958,8 +1078,8 @@ class Database:
 
     def borc_guncelle(self, id: int, kalan: float, durum: str) -> None:
         self.cursor.execute(
-            "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=?",
-            (para_yuvarla(kalan), durum, id),
+            "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=? AND kullanici_id=?",
+            (para_yuvarla(kalan), durum, id, self.aktif_kullanici_id),
         )
         self.conn.commit()
 
@@ -977,11 +1097,13 @@ class Database:
         """
         odeme = para_yuvarla(odeme_tutar)
         tarih_iso = normalize_date(tarih)
+        uid = self.aktif_kullanici_id
         try:
             self.cursor.execute("BEGIN")
             self.cursor.execute(
-                "SELECT tur, aciklama, kalan_tutar FROM borclar WHERE id=?",
-                (borc_id,),
+                "SELECT tur, aciklama, kalan_tutar FROM borclar "
+                "WHERE id=? AND kullanici_id=?",
+                (borc_id, uid),
             )
             row = self.cursor.fetchone()
             if row is None:
@@ -994,9 +1116,9 @@ class Database:
                 islem_tur = "Gider" if tur == "Borç" else "Gelir"
                 self.cursor.execute(
                     "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
-                    "tutar, etiketler) VALUES (?,?,?,?,?,?)",
+                    "tutar, etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
                     (tarih_iso, islem_tur, "Borç/Alacak",
-                     f"{tur} ödemesi: {aciklama}", odeme, "borc-odeme"),
+                     f"{tur} ödemesi: {aciklama}", odeme, "borc-odeme", uid),
                 )
             self.cursor.execute(
                 "INSERT INTO borc_odemeler (borc_id, tarih, tutar) "
@@ -1004,8 +1126,8 @@ class Database:
                 (borc_id, tarih_iso, odeme),
             )
             self.cursor.execute(
-                "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=?",
-                (yeni_kalan, yeni_durum, borc_id),
+                "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=? AND kullanici_id=?",
+                (yeni_kalan, yeni_durum, borc_id, uid),
             )
             self.conn.commit()
         except Exception:
@@ -1025,16 +1147,24 @@ class Database:
         ]
 
     def borc_sil(self, id: int) -> None:
-        self.cursor.execute("DELETE FROM borclar WHERE id=?", (id,))
+        self.cursor.execute(
+            "DELETE FROM borclar WHERE id=? AND kullanici_id=?",
+            (id, self.aktif_kullanici_id),
+        )
         self.conn.commit()
 
     def borclari_listele(self, durum: str = "Aktif") -> List[Dict[str, Any]]:
+        uid = self.aktif_kullanici_id
         if durum == "Tümü":
-            self.cursor.execute("SELECT * FROM borclar ORDER BY vade_tarih")
+            self.cursor.execute(
+                "SELECT * FROM borclar WHERE kullanici_id=? ORDER BY vade_tarih",
+                (uid,),
+            )
         else:
             self.cursor.execute(
-                "SELECT * FROM borclar WHERE durum=? ORDER BY vade_tarih",
-                (durum,),
+                "SELECT * FROM borclar WHERE durum=? AND kullanici_id=? "
+                "ORDER BY vade_tarih",
+                (durum, uid),
             )
         kolonlar = [
             "id",
@@ -1047,12 +1177,15 @@ class Database:
             "vade_tarih",
             "durum",
         ]
+        # SELECT * kullanici_id'yi de içerir; kolonlar 9 isimle sınırlı
+        # olduğu için zip onu otomatik düşürür.
         return [dict(zip(kolonlar, satir)) for satir in self.cursor.fetchall()]
 
     def borc_toplam(self, durum: str = "Aktif") -> float:
         self.cursor.execute(
-            "SELECT IFNULL(SUM(kalan_tutar), 0) FROM borclar WHERE durum=?",
-            (durum,),
+            "SELECT IFNULL(SUM(kalan_tutar), 0) FROM borclar "
+            "WHERE durum=? AND kullanici_id=?",
+            (durum, self.aktif_kullanici_id),
         )
         row = self.cursor.fetchone()
         return float(row[0]) if row else 0.0
@@ -1076,9 +1209,16 @@ class Database:
         return None
 
     def kullanici_kaydet(self, kullanici_adi: str, sifre: str, ad_soyad: str) -> bool:
-        """Yeni kullanıcı kaydeder. Başarılıysa True."""
+        """Yeni kullanıcı kaydeder. Başarılıysa True.
+
+        Şifre politikası (min uzunluk) UI'a değil veri katmanına bağlıdır.
+        """
         from datetime import datetime as dt
 
+        if len(sifre) < MIN_SIFRE_UZUNLUK:
+            raise ValueError(
+                f"Şifre en az {MIN_SIFRE_UZUNLUK} karakter olmalıdır."
+            )
         sifre_hash = _sifre_hashla(sifre)
         try:
             self.cursor.execute(
@@ -1097,6 +1237,15 @@ class Database:
             return False
 
     def kullanici_sifre_degistir(self, kullanici_id: int, yeni_sifre: str) -> None:
+        """Şifre değiştirir. Yetki: aktif kullanıcı ya kendi şifresini ya da
+        admin ise başkasınınkini değiştirebilir (yetki kontrolü UI'da değil
+        veri katmanında)."""
+        if kullanici_id != self.aktif_kullanici_id and not self.aktif_admin_mi():
+            raise YetkiHatasi("Bu işlem için yetkiniz yok.")
+        if len(yeni_sifre) < MIN_SIFRE_UZUNLUK:
+            raise ValueError(
+                f"Şifre en az {MIN_SIFRE_UZUNLUK} karakter olmalıdır."
+            )
         sifre_hash = _sifre_hashla(yeni_sifre)
         self.cursor.execute(
             "UPDATE kullanicilar SET sifre_hash=? WHERE id=?",
@@ -1137,10 +1286,26 @@ class Database:
         """ID'si 1 olan kullanıcı admindir."""
         return kullanici_id == 1
 
+    def aktif_admin_mi(self) -> bool:
+        """Aktif oturum kullanıcısı admin mi? Yetki kararları paylaşılan
+        ayarlar tablosu yerine bellekteki oturum kimliğinden verilir."""
+        return self.kullanici_admin_mi(self.aktif_kullanici_id)
+
     def kullanici_sil(self, kullanici_id: int) -> bool:
-        """Kullanıcıyı sil (admin kendini silemez)."""
+        """Kullanıcıyı sil. Yetki: yalnızca admin; admin (id=1) silinemez.
+
+        Yetki kontrolü artık veri katmanında: önceden yalnızca UI admin
+        panelini gizliyordu, DB metodu çağıranı hiç doğrulamıyordu.
+        """
+        if not self.aktif_admin_mi():
+            raise YetkiHatasi("Kullanıcı silmek için admin yetkisi gerekir.")
         if kullanici_id == 1:
             return False
+        # Silinen kullanıcının finansal verisini de temizle (yetim veri kalmasın)
+        for tablo in _KULLANICI_TABLOLARI:
+            self.cursor.execute(
+                f"DELETE FROM {tablo} WHERE kullanici_id=?", (kullanici_id,)
+            )
         self.cursor.execute("DELETE FROM kullanicilar WHERE id=?", (kullanici_id,))
         self.conn.commit()
         return True
@@ -1173,16 +1338,18 @@ class Database:
         self, tur: str, kategori: str, aciklama: str, tutar: float, gun: int
     ) -> None:
         self.cursor.execute(
-            "INSERT INTO tekrarlayan (tur, kategori, aciklama, tutar, gun) "
-            "VALUES (?,?,?,?,?)",
-            (tur, kategori, aciklama, tutar, gun),
+            "INSERT INTO tekrarlayan (tur, kategori, aciklama, tutar, gun, "
+            "kullanici_id) VALUES (?,?,?,?,?,?)",
+            (tur, kategori, aciklama, para_yuvarla(tutar), gun,
+             self.aktif_kullanici_id),
         )
         self.conn.commit()
 
     def tekrarlayan_listele(self) -> List[Dict[str, Any]]:
         self.cursor.execute(
             "SELECT id, tur, kategori, aciklama, tutar, gun, aktif "
-            "FROM tekrarlayan ORDER BY tur, kategori"
+            "FROM tekrarlayan WHERE kullanici_id=? ORDER BY tur, kategori",
+            (self.aktif_kullanici_id,),
         )
         return [
             {
@@ -1193,13 +1360,17 @@ class Database:
         ]
 
     def tekrarlayan_sil(self, id: int) -> None:
-        self.cursor.execute("DELETE FROM tekrarlayan WHERE id=?", (id,))
+        self.cursor.execute(
+            "DELETE FROM tekrarlayan WHERE id=? AND kullanici_id=?",
+            (id, self.aktif_kullanici_id),
+        )
         self.conn.commit()
 
     def tekrarlayan_toggle(self, id: int) -> None:
         self.cursor.execute(
-            "UPDATE tekrarlayan SET aktif = CASE WHEN aktif=1 THEN 0 ELSE 1 END WHERE id=?",
-            (id,),
+            "UPDATE tekrarlayan SET aktif = CASE WHEN aktif=1 THEN 0 ELSE 1 END "
+            "WHERE id=? AND kullanici_id=?",
+            (id, self.aktif_kullanici_id),
         )
         self.conn.commit()
 
@@ -1226,9 +1397,10 @@ class Database:
     def tasarruf_hedefi_ekle(self, ad: str, hedef_tutar: float, hedef_tarih: str = "") -> int:
         hedef_tarih_iso = normalize_date(hedef_tarih) if hedef_tarih else None
         self.cursor.execute(
-            "INSERT INTO tasarruf_hedefleri (ad, hedef_tutar, biriken_tutar, hedef_tarih) "
-            "VALUES (?, ?, 0, ?)",
-            (ad, para_yuvarla(hedef_tutar), hedef_tarih_iso),
+            "INSERT INTO tasarruf_hedefleri (ad, hedef_tutar, biriken_tutar, "
+            "hedef_tarih, kullanici_id) VALUES (?, ?, 0, ?, ?)",
+            (ad, para_yuvarla(hedef_tutar), hedef_tarih_iso,
+             self.aktif_kullanici_id),
         )
         self.conn.commit()
         return self.cursor.lastrowid
@@ -1236,7 +1408,8 @@ class Database:
     def tasarruf_hedefleri_listele(self) -> List[Dict[str, Any]]:
         self.cursor.execute(
             "SELECT id, ad, hedef_tutar, biriken_tutar, hedef_tarih "
-            "FROM tasarruf_hedefleri ORDER BY id DESC"
+            "FROM tasarruf_hedefleri WHERE kullanici_id=? ORDER BY id DESC",
+            (self.aktif_kullanici_id,),
         )
         return [
             {
@@ -1282,9 +1455,10 @@ class Database:
                 islem_tur = "Gider" if fiili_delta > 0 else "Gelir"
                 self.cursor.execute(
                     "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
-                    "tutar, etiketler) VALUES (?,?,?,?,?,?)",
+                    "tutar, etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
                     (tarih_iso, islem_tur, "Tasarruf",
-                     f"Tasarruf: {ad}", abs(fiili_delta), "tasarruf"),
+                     f"Tasarruf: {ad}", abs(fiili_delta), "tasarruf",
+                     self.aktif_kullanici_id),
                 )
             self.cursor.execute(
                 "UPDATE tasarruf_hedefleri SET biriken_tutar=? WHERE id=?",
@@ -1296,7 +1470,10 @@ class Database:
             raise
 
     def tasarruf_hedefi_sil(self, id: int) -> None:
-        self.cursor.execute("DELETE FROM tasarruf_hedefleri WHERE id=?", (id,))
+        self.cursor.execute(
+            "DELETE FROM tasarruf_hedefleri WHERE id=? AND kullanici_id=?",
+            (id, self.aktif_kullanici_id),
+        )
         self.conn.commit()
 
     # ==========================
@@ -1315,9 +1492,10 @@ class Database:
         def _ay_toplam(ay, yil, tur):
             self.cursor.execute(
                 "SELECT COALESCE(SUM(tutar),0) FROM islemler "
-                "WHERE tur=? AND CAST(strftime('%m', tarih) AS INTEGER)=? "
+                "WHERE kullanici_id=? AND tur=? "
+                "AND CAST(strftime('%m', tarih) AS INTEGER)=? "
                 "AND CAST(strftime('%Y', tarih) AS INTEGER)=?",
-                (tur, ay, yil),
+                (self.aktif_kullanici_id, tur, ay, yil),
             )
             row = self.cursor.fetchone()
             return float(row[0]) if row else 0.0
@@ -1333,15 +1511,19 @@ class Database:
 
     def yillik_karsilastirma(self) -> List[Tuple[str, float, float]]:
         """(yil, gelir_toplam, gider_toplam) listesi döner — tüm yıllar, eskiden yeniye."""
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
         SELECT
             strftime('%Y', tarih) AS yil,
             COALESCE(SUM(CASE WHEN tur='Gelir' THEN tutar ELSE 0 END), 0),
             COALESCE(SUM(CASE WHEN tur='Gider' THEN tutar ELSE 0 END), 0)
         FROM islemler
+        WHERE kullanici_id=?
         GROUP BY yil
         ORDER BY yil ASC
-        """)
+        """,
+            (self.aktif_kullanici_id,),
+        )
         return [(r[0], float(r[1]), float(r[2])) for r in self.cursor.fetchall()]
 
     # ==========================
@@ -1352,7 +1534,9 @@ class Database:
         from datetime import date
         bugun = date.today().strftime("%Y-%m-%d")
         self.cursor.execute(
-            "SELECT * FROM islemler WHERE tarih=? ORDER BY id DESC", (bugun,)
+            "SELECT * FROM islemler WHERE tarih=? AND kullanici_id=? "
+            "ORDER BY id DESC",
+            (bugun, self.aktif_kullanici_id),
         )
         return self.cursor.fetchall()
 
@@ -1362,8 +1546,9 @@ class Database:
         hafta_basi = (bugun - timedelta(days=bugun.weekday())).strftime("%Y-%m-%d")
         bugun_str = bugun.strftime("%Y-%m-%d")
         self.cursor.execute(
-            "SELECT * FROM islemler WHERE tarih BETWEEN ? AND ? ORDER BY id DESC",
-            (hafta_basi, bugun_str),
+            "SELECT * FROM islemler WHERE tarih BETWEEN ? AND ? "
+            "AND kullanici_id=? ORDER BY id DESC",
+            (hafta_basi, bugun_str, self.aktif_kullanici_id),
         )
         return self.cursor.fetchall()
 

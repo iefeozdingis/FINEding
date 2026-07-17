@@ -231,6 +231,14 @@ class FinedingApp(ctk.CTk):
                 pass
 
         self.db = Database()
+        # Aktif oturum kullanıcısını veri katmanına bildir — tüm finans
+        # sorguları bu kullanıcıyla filtrelenir (veri izolasyonu). Yetki
+        # kararları da paylaşılan ayarlar tablosu yerine bu kimlikten verilir.
+        kid = self.db.ayar_oku("aktif_kullanici_id", "1")
+        try:
+            self.db.oturum_ac(int(kid) if kid else 1)
+        except (ValueError, TypeError):
+            self.db.oturum_ac(1)
         kayitli_tema = self.db.ayar_oku("tema", "Dark")
         ctk.set_appearance_mode(kayitli_tema)
 

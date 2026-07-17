@@ -124,8 +124,9 @@ class AyarlarSayfasi(ctk.CTkFrame):
         )  # type: ignore
 
         # --- Admin Paneli (sadece admin görebilir) ---
-        kullanici_id_str = self.db.ayar_oku("aktif_kullanici_id", "0")
-        if kullanici_id_str and int(kullanici_id_str) == 1:
+        # Yetki kararı paylaşılan ayarlar tablosu yerine veri katmanındaki
+        # aktif oturum kimliğinden verilir.
+        if self.db.aktif_admin_mi():
             ctk.CTkFrame(kart, height=1, fg_color="#f59e0b").pack(
                 fill="x", padx=40, pady=10
             )
@@ -137,7 +138,19 @@ class AyarlarSayfasi(ctk.CTkFrame):
                 text_color="#fbbf24",
             ).pack(pady=(5, 10))
 
+            self._admin_kart = kart
+            self._admin_liste_frame = None
             self._admin_kullanici_listesi(kart)
+
+    def _admin_listesini_yenile(self):
+        """Admin kullanıcı listesini yalnızca kendi frame'ini yeniden kurarak
+        yeniler (tüm sayfayı destroy+__init__ etmeden)."""
+        if getattr(self, "_admin_liste_frame", None) is not None:
+            try:
+                self._admin_liste_frame.destroy()
+            except Exception:
+                pass
+        self._admin_kullanici_listesi(self._admin_kart)
 
     def _admin_kullanici_listesi(self, kart):
         """Admin için kullanıcı listesini göster."""
@@ -145,6 +158,7 @@ class AyarlarSayfasi(ctk.CTkFrame):
 
         liste_frame = ctk.CTkScrollableFrame(kart, height=160, fg_color="#0f172a")
         liste_frame.pack(fill="x", padx=40, pady=(0, 8))
+        self._admin_liste_frame = liste_frame
 
         for k in kullanicilar:
             row = ctk.CTkFrame(liste_frame, fg_color="transparent")
@@ -184,31 +198,33 @@ class AyarlarSayfasi(ctk.CTkFrame):
         from tkinter import simpledialog
 
         yeni = simpledialog.askstring(
-            "Şifre Sıfırla", "Yeni şifreyi girin (en az 3 karakter):",
+            "Şifre Sıfırla", "Yeni şifreyi girin (en az 8 karakter):",
             parent=self, show="•",
         )
-        if yeni and len(yeni) >= 3:
+        if not yeni:
+            return
+        try:
             self.db.kullanici_sifre_degistir(kullanici_id, yeni)
             messagebox.showinfo("Başarılı", "Kullanıcının şifresi sıfırlandı.")
-        elif yeni:
-            messagebox.showerror("Hata", "Şifre en az 3 karakter olmalıdır.")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
 
     def _admin_kullanici_sil(self, kullanici_id, kullanici_adi):
         if messagebox.askyesno(
             "Kullanıcıyı Sil",
             f"'{kullanici_adi}' kullanıcısını silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!",
         ):
-            if self.db.kullanici_sil(kullanici_id):
+            try:
+                silindi = self.db.kullanici_sil(kullanici_id)
+            except Exception as e:
+                messagebox.showerror("Hata", str(e))
+                return
+            if silindi:
                 messagebox.showinfo("Başarılı", f"'{kullanici_adi}' silindi.")
-                # Sayfayı yenile
-                self.destroy()
-                self.__init__(
-                    self.master,
-                    self.db,
-                    self.dashboard_callback,
-                    self.hesap_degistir_callback,
-                )
-                self.grid(row=0, column=0, sticky="nsew")
+                # Sadece admin liste bölümünü yeniden kur (destroy+__init__
+                # yerine — bu, yok edilmiş widget üzerinde __init__ çağırmanın
+                # yol açtığı callback sızıntısı/tanımsız davranışı önler)
+                self._admin_listesini_yenile()
             else:
                 messagebox.showerror("Hata", "Admin kullanıcısı silinemez!")
 
@@ -335,9 +351,6 @@ class SifreDegistirPenceresi(ctk.CTkToplevel):
         if yeni != yeni2:
             messagebox.showerror("Hata", "Yeni şifreler eşleşmiyor!")
             return
-        if len(yeni) < 3:
-            messagebox.showerror("Hata", "Şifre en az 3 karakter olmalıdır.")
-            return
 
         kullanici_id_str = self.db.ayar_oku("aktif_kullanici_id", "0")
         if not kullanici_id_str or kullanici_id_str == "0":
@@ -345,7 +358,12 @@ class SifreDegistirPenceresi(ctk.CTkToplevel):
             self.destroy()
             return
         kullanici_id = int(kullanici_id_str)
-        self.db.kullanici_sifre_degistir(kullanici_id, yeni)
+        try:
+            self.db.kullanici_sifre_degistir(kullanici_id, yeni)
+        except Exception as e:
+            # Şifre politikası (min uzunluk) veya yetki hatası
+            messagebox.showerror("Hata", str(e))
+            return
         messagebox.showinfo("Başarılı", "Şifre güncellendi!")
         self.destroy()
 
