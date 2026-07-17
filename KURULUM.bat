@@ -52,8 +52,7 @@ echo.
 echo Uygulamayi baslatmak icin:
 echo   "run_finans_defterim.bat" dosyasina cift tiklayin.
 echo.
-echo Ilk giris bilgileri:
-echo   Kullanici: admin
-echo   Sifre: 12345
+echo Ilk acilista kendi hesabinizi olusturun (Yeni Hesap Olustur).
+echo Ilk kaydolan kullanici otomatik admin olur. Sifre en az 8 karakter.
 echo.
 pause

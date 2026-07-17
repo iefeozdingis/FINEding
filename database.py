@@ -1,5 +1,8 @@
 import csv
 import hashlib
+import hmac
+import logging
+import secrets
 import shutil
 import sqlite3
 from datetime import datetime
@@ -14,6 +17,28 @@ DB_FOLDER = Path("database")
 DB_FOLDER.mkdir(exist_ok=True)
 
 DB_PATH = DB_FOLDER / "finans.db"
+
+
+def _hmac_anahtari() -> bytes:
+    """Kuruluma özel HMAC anahtarını okur; yoksa rastgele üretip saklar.
+
+    Anahtar, veritabanı dosyasının yanında (yedeklerle BİRLİKTE taşınmayan
+    database/ dizininde) tutulur; böylece sadece yedek dosyasına erişen biri
+    checksum'ı yeniden üretip kurcalayamaz. Yol DB_PATH'ten türetilir ki
+    testler farklı bir dizine izole olabilsin.
+    """
+    key_path = Path(DB_PATH).parent / ".hmac_key"
+    try:
+        if key_path.exists():
+            return key_path.read_bytes()
+        anahtar = secrets.token_bytes(32)
+        key_path.write_bytes(anahtar)
+        return anahtar
+    except OSError:
+        # Anahtar dosyası yazılamıyorsa sabit bir değere düş (yine de
+        # bozulma tespiti sağlar, tamper koruması zayıflar)
+        return b"fineding-fallback-key"
+
 
 # Güvenli şifre hash'leme
 
@@ -41,6 +66,18 @@ def _sifre_dogrula(sifre: str, hash_deger: str) -> bool:
     # bcrypt mevcutken her zaman yeni bir bcrypt hash üretir ve asla eşleşmez.
     legacy_hash = hashlib.sha256(b"Fineding2024!" + sifre.encode()).hexdigest()
     return legacy_hash == hash_deger
+
+
+def csv_guvenli(deger: Any) -> Any:
+    """CSV/Excel formül enjeksiyonuna karşı hücreyi temizler.
+
+    =, +, -, @, TAB veya CR ile başlayan metinler Excel/LibreOffice'te
+    formül (=HYPERLINK, DDE vb.) olarak çalışır. Bu tür hücrelerin önüne
+    tek tırnak eklenerek düz metin olması sağlanır.
+    """
+    if isinstance(deger, str) and deger and deger[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + deger
+    return deger
 
 
 def para_yuvarla(tutar: Any) -> float:
@@ -612,7 +649,9 @@ class Database:
                 except ValueError:
                     tarih_goster = satir[1]
                 writer.writerow(
-                    [satir[0], tarih_goster, satir[2], satir[3], satir[4], satir[5]]
+                    [satir[0], tarih_goster,
+                     csv_guvenli(satir[2]), csv_guvenli(satir[3]),
+                     csv_guvenli(satir[4]), satir[5]]
                 )
 
     def import_csv(self, path: str) -> int:
@@ -798,26 +837,38 @@ class Database:
         gecici_cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         gecici_cursor.close()
         shutil.copy2(DB_PATH, hedef_yol)
-        # create checksum file next to backup
-        h = hashlib.sha256()
+        # Yedeğin yanına HMAC imzası yaz — düz sha256 imzasızdı, saldırgan
+        # yedeği değiştirip checksum'ı yeniden üretebiliyordu. HMAC anahtarı
+        # yedeklerle birlikte taşınmadığı için kurcalama tespit edilir.
+        mac = hmac.new(_hmac_anahtari(), digestmod=hashlib.sha256)
         with open(hedef_yol, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
-                h.update(chunk)
-        checksum_path = str(hedef_yol) + ".sha256"
-        with open(checksum_path, "w", encoding="utf-8") as cf:
-            cf.write(h.hexdigest())
+                mac.update(chunk)
+        with open(str(hedef_yol) + ".hmac", "w", encoding="utf-8") as cf:
+            cf.write(mac.hexdigest())
 
     def geri_yukle(self, kaynak_yol: str) -> None:
-        # Bütünlük kontrolü (varsa)
-        checksum_path = str(kaynak_yol) + ".sha256"
-        if Path(checksum_path).exists():
+        # Bütünlük kontrolü: önce HMAC (yeni), yoksa eski düz sha256 (geriye
+        # uyumluluk). HMAC eşleşmezse kurcalanmış/bozuk kabul edilir.
+        hmac_path = str(kaynak_yol) + ".hmac"
+        sha_path = str(kaynak_yol) + ".sha256"
+        if Path(hmac_path).exists():
+            mac = hmac.new(_hmac_anahtari(), digestmod=hashlib.sha256)
+            with open(kaynak_yol, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    mac.update(chunk)
+            with open(hmac_path, "r", encoding="utf-8") as cf:
+                expected = cf.read().strip()
+            if not hmac.compare_digest(mac.hexdigest(), expected):
+                raise ValueError("Yedek bütünlük (HMAC) kontrolü başarısız.")
+        elif Path(sha_path).exists():
             h = hashlib.sha256()
             with open(kaynak_yol, "rb") as f:
                 for chunk in iter(lambda: f.read(8192), b""):
                     h.update(chunk)
-            with open(checksum_path, "r", encoding="utf-8") as cf:
+            with open(sha_path, "r", encoding="utf-8") as cf:
                 expected = cf.read().strip()
-            if h.hexdigest() != expected:
+            if not hmac.compare_digest(h.hexdigest(), expected):
                 raise ValueError("Yedek bütünlük kontrolü başarısız.")
 
         # Dosyanın gerçekten bir SQLite veritabanı olduğunu doğrula —
@@ -1233,6 +1284,19 @@ class Database:
         )
         row = self.cursor.fetchone()
         if row and _sifre_dogrula(sifre, row[3]):
+            # Upgrade-on-login: eski (bcrypt öncesi) SHA-256 hash başarıyla
+            # doğrulandıysa bcrypt'e yükselt; böylece zayıf hash kalıcı olmaz.
+            if _HAS_BCRYPT and not str(row[3]).startswith("$2"):
+                try:
+                    self.cursor.execute(
+                        "UPDATE kullanicilar SET sifre_hash=? WHERE id=?",
+                        (_sifre_hashla(sifre), row[0]),
+                    )
+                    self.conn.commit()
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "Şifre hash yükseltme başarısız (kullanıcı %s)", row[0]
+                    )
             return {"id": row[0], "kullanici_adi": row[1], "ad_soyad": row[2]}
         return None
 

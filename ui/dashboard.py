@@ -2,7 +2,7 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from database import normalize_date
+from database import csv_guvenli, normalize_date
 from ui.utils import (
     para_formatla,
     tarih_bind,
@@ -541,7 +541,11 @@ class Dashboard(ctk.CTkFrame):
                     except Exception:
                         tarih_goster = satir[1]
                     etiket = satir[6] if len(satir) > 6 else ""
-                    writer.writerow([satir[0], tarih_goster, satir[2], satir[3], satir[4], satir[5], etiket])
+                    writer.writerow([
+                        satir[0], tarih_goster, csv_guvenli(satir[2]),
+                        csv_guvenli(satir[3]), csv_guvenli(satir[4]),
+                        satir[5], csv_guvenli(etiket),
+                    ])
             messagebox.showinfo("Başarılı", f"CSV dışa aktarıldı:\n{yol}")
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -566,7 +570,8 @@ class Dashboard(ctk.CTkFrame):
             ws.title = "İşlemler"
             ws.append(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"])
             for satir in self.db.islem_ara():
-                ws.append(list(satir))
+                # Formül enjeksiyonuna karşı metin hücreleri temizle
+                ws.append([csv_guvenli(h) for h in satir])
             wb.save(yol)
             messagebox.showinfo("Başarılı", f"Excel dışa aktarıldı:\n{yol}")
         except Exception as e:
@@ -601,7 +606,7 @@ class Dashboard(ctk.CTkFrame):
 
             veri = [["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]]
             for satir in self.db.islem_ara():
-                veri.append([str(s) for s in satir])
+                veri.append([str(csv_guvenli(s)) for s in satir])
 
             tablo = Table(veri)
             tablo.setStyle(

@@ -104,10 +104,14 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Varsayılan Giriş
-| Kullanıcı | Şifre |
-|-----------|-------|
-| `admin` | `12345` |
+### İlk Giriş
+Uygulama ilk açıldığında **kendi hesabını oluşturursun** — önceden tanımlı
+bir `admin/12345` hesabı yoktur. İlk kaydolan kullanıcı otomatik olarak admin
+olur. Şifreler bcrypt ile hash'lenir ve en az 8 karakter olmalıdır.
+
+> ⚠️ Eski sürümlerde belgelenmiş `admin/12345` gibi varsayılan bir hesap
+> kullanıyorsan, **ilk fırsatta Ayarlar → Şifre Değiştir** ile güçlü bir
+> şifre belirle.
 
 ---
 

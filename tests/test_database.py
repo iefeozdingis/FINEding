@@ -497,6 +497,53 @@ class DatabaseTests(unittest.TestCase):
         # 2026 Şubat 28 gün — tarih 2026-02-28 olmalı
         self.assertEqual(self.db.tum_islemler()[0][1], "2026-02-28")
 
+    def test_csv_guvenli(self):
+        """Formül enjeksiyonu tetikleyen hücreler tek tırnakla kaçışlanmalı (#13)."""
+        from database import csv_guvenli
+        self.assertEqual(csv_guvenli("=HYPERLINK(1)"), "'=HYPERLINK(1)")
+        self.assertEqual(csv_guvenli("+1+1"), "'+1+1")
+        self.assertEqual(csv_guvenli("-2"), "'-2")
+        self.assertEqual(csv_guvenli("@cmd"), "'@cmd")
+        # Normal metin dokunulmaz
+        self.assertEqual(csv_guvenli("Market"), "Market")
+        self.assertEqual(csv_guvenli(1500), 1500)
+
+    def test_upgrade_on_login(self):
+        """Eski SHA-256 hash başarılı girişte bcrypt'e yükseltilmeli (#14)."""
+        import hashlib
+        import database as dbm
+        if not dbm._HAS_BCRYPT:
+            self.skipTest("bcrypt yok")
+        # Elle eski SHA-256 hash'li kullanıcı ekle
+        eski = hashlib.sha256(b"Fineding2024!" + b"gizli123").hexdigest()
+        self.db.conn.execute(
+            "INSERT INTO kullanicilar (kullanici_adi, sifre_hash, ad_soyad, "
+            "olusturma_tarihi) VALUES ('eski', ?, 'Eski', '2026-01-01')",
+            (eski,),
+        )
+        self.db.conn.commit()
+        # Giriş başarılı olmalı
+        self.assertIsNotNone(self.db.kullanici_dogrula("eski", "gizli123"))
+        # Hash artık bcrypt olmalı
+        yeni_hash = self.db.conn.execute(
+            "SELECT sifre_hash FROM kullanicilar WHERE kullanici_adi='eski'"
+        ).fetchone()[0]
+        self.assertTrue(yeni_hash.startswith("$2"))
+        # Yeni hash'le hâlâ giriş yapılabilmeli
+        self.assertIsNotNone(self.db.kullanici_dogrula("eski", "gizli123"))
+
+    def test_yedek_hmac_kurcalama(self):
+        """Kurcalanmış yedek HMAC kontrolüyle reddedilmeli (#15)."""
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Test", 100)
+        yedek = Path(self.temp_dir.name) / "y.db"
+        self.db.yedekle(str(yedek))
+        self.assertTrue(Path(str(yedek) + ".hmac").exists())
+        # Yedeği boz
+        with open(yedek, "ab") as f:
+            f.write(b"BOZUK")
+        with self.assertRaises(ValueError):
+            self.db.geri_yukle(str(yedek))
+
     def test_gunluk_haftalik(self):
         """Günlük ve haftalık filtre testi."""
         from datetime import date

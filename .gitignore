@@ -16,6 +16,9 @@ dist/
 *.sqlite3
 *.sqlite
 *.sha256
+*.hmac
+.hmac_key
+database/.hmac_key
 exports/
 database/*.db
 database/*.db-*

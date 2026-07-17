@@ -521,6 +521,7 @@ class FinedingApp(ctk.CTk):
             for eski in yedekler[10:]:
                 try:
                     eski.unlink()
+                    Path(str(eski) + ".hmac").unlink(missing_ok=True)
                     Path(str(eski) + ".sha256").unlink(missing_ok=True)
                 except Exception:
                     pass
