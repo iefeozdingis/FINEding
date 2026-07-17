@@ -343,6 +343,14 @@ class Database:
             aktif INTEGER NOT NULL DEFAULT 1
         )
         """)
+        # Son işlenen dönem (YYYY-MM) — kaçan ayların telafisi ve mükerrer
+        # eklemeyi önlemek için içerik eşleştirme yerine bu alan kullanılır
+        try:
+            self.cursor.execute(
+                "ALTER TABLE tekrarlayan ADD COLUMN son_islenen_donem TEXT DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            pass
 
         # İşlem geçmişi (audit log)
         self.cursor.execute("""
@@ -1181,6 +1189,26 @@ class Database:
         # olduğu için zip onu otomatik düşürür.
         return [dict(zip(kolonlar, satir)) for satir in self.cursor.fetchall()]
 
+    def yaklasan_borclar(self, gun_esigi: int = 3) -> List[Dict[str, Any]]:
+        """Vadesi gun_esigi gün içinde olan veya geçmiş aktif borçları döner
+        (aktif kullanıcı için). Bildirim thread'inin iki farklı tarih formatı
+        denemesine gerek kalmadı — tarihler artık ISO."""
+        from datetime import date as _date
+        bugun = _date.today()
+        sonuc = []
+        for b in self.borclari_listele("Aktif"):
+            vade_str = b.get("vade_tarih")
+            if not vade_str:
+                continue
+            try:
+                vade = datetime.strptime(vade_str, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            kalan_gun = (vade - bugun).days
+            if kalan_gun <= gun_esigi:
+                sonuc.append({**b, "kalan_gun": kalan_gun})
+        return sonuc
+
     def borc_toplam(self, durum: str = "Aktif") -> float:
         self.cursor.execute(
             "SELECT IFNULL(SUM(kalan_tutar), 0) FROM borclar "
@@ -1373,6 +1401,87 @@ class Database:
             (id, self.aktif_kullanici_id),
         )
         self.conn.commit()
+
+    def tekrarlayan_isle(self, bugun: Optional[Any] = None) -> List[Dict[str, Any]]:
+        """Vadesi gelmiş tekrarlayan işlemleri (aktif kullanıcı için) işler.
+
+        Önceki tasarım yalnızca 'bugünün günü == kural günü' ise ekliyordu:
+        uygulama o gün kapalıysa o ay tamamen kaçıyor, ayrıca içerik
+        eşleştirmeli mükerrer koruması (aciklama NULL olunca) her saat aynı
+        kaydı yeniden ekleyebiliyordu. Artık her kural için son işlenen
+        dönemden bugüne kadarki tüm 'geçmiş' dönemler (kuralın günü o ay
+        gelmişse) telafi edilir ve son_islenen_donem ile işaretlenir.
+
+        Eklenen işlemlerin listesini (bildirim için) döner.
+        """
+        from datetime import date as _date
+        bugun = bugun or _date.today()
+        uid = self.aktif_kullanici_id
+        eklenenler: List[Dict[str, Any]] = []
+        self.cursor.execute(
+            "SELECT id, tur, kategori, aciklama, tutar, gun, "
+            "COALESCE(son_islenen_donem,'') FROM tekrarlayan "
+            "WHERE aktif=1 AND kullanici_id=?",
+            (uid,),
+        )
+        kurallar = self.cursor.fetchall()
+        for kid, tur, kategori, aciklama, tutar, gun, son_donem in kurallar:
+            # İşlenecek dönemleri hesapla: son dönemden sonrası, günü gelmiş olanlar
+            for yil, ay in self._islenecek_donemler(son_donem, bugun, gun):
+                gecerli_gun = min(gun, self._ayin_son_gunu(yil, ay))
+                tarih_iso = f"{yil:04d}-{ay:02d}-{gecerli_gun:02d}"
+                self.cursor.execute(
+                    "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
+                    "etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
+                    (tarih_iso, tur, kategori, aciklama or "",
+                     para_yuvarla(tutar), "tekrarlayan", uid),
+                )
+                self.cursor.execute(
+                    "UPDATE tekrarlayan SET son_islenen_donem=? WHERE id=?",
+                    (f"{yil:04d}-{ay:02d}", kid),
+                )
+                eklenenler.append(
+                    {"tur": tur, "kategori": kategori, "tutar": para_yuvarla(tutar)}
+                )
+        if eklenenler:
+            self.conn.commit()
+        return eklenenler
+
+    @staticmethod
+    def _ayin_son_gunu(yil: int, ay: int) -> int:
+        import calendar
+        return calendar.monthrange(yil, ay)[1]
+
+    @classmethod
+    def _islenecek_donemler(cls, son_donem: str, bugun: Any, gun: int):
+        """(yil, ay) çiftlerini üretir: son_donem'den sonraki, kuralın günü
+        gelmiş dönemler. son_donem boşsa yalnızca içinde bulunulan ay
+        (günü gelmişse) işlenir — geçmişe dönük sınırsız üretim yapılmaz."""
+        bu_yil, bu_ay = bugun.year, bugun.month
+        if son_donem:
+            try:
+                y, a = int(son_donem[:4]), int(son_donem[5:7])
+            except (ValueError, IndexError):
+                y, a = bu_yil, bu_ay
+            # son dönemden bir sonraki aydan başla
+            a += 1
+            if a > 12:
+                a = 1
+                y += 1
+        else:
+            # İlk kez: yalnızca içinde bulunulan ayı değerlendir
+            y, a = bu_yil, bu_ay
+        while (y, a) <= (bu_yil, bu_ay):
+            # Bu dönemde kuralın günü geldi mi? (içinde bulunulan ay için
+            # bugünün günü >= kural günü olmalı; geçmiş aylar her zaman geçmiş)
+            if (y, a) < (bu_yil, bu_ay) or bugun.day >= min(
+                gun, cls._ayin_son_gunu(y, a)
+            ):
+                yield (y, a)
+            a += 1
+            if a > 12:
+                a = 1
+                y += 1
 
     def tekrarlayan_bugun_kontrol(self) -> List[Dict[str, Any]]:
         """Bugünün gününde aktif tekrarlayan işlemleri getir."""

@@ -196,9 +196,13 @@ class GirisEkrani(ctk.CTk):
         self.db.ayar_kaydet("aktif_kullanici_id", str(kullanici["id"]))
         self.db.ayar_kaydet("aktif_kullanici_adi", kullanici["kullanici_adi"])
 
+        # Kullanıcıyı sakla ve pencereyi kapat; ana uygulamayı burada (giriş
+        # mainloop'unun içinde) BAŞLATMAYIZ — bu iç içe mainloop'a yol açıyordu.
+        # Dıştaki baslat() döngüsü self.kullanici'yi okuyup ana pencereyi açar.
         self.kullanici = kullanici
         self.destroy()
-        self.on_login_success(kullanici)
+        if callable(self.on_login_success):
+            self.on_login_success(kullanici)
 
     def _kayit_ac(self):
         KayitPenceresi(self, self.db)

@@ -1,13 +1,14 @@
 import logging
 import sys
 import threading
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 import customtkinter as ctk
 from PIL import Image as PILImage
 
 from database import Database
+from ui.money import para_formatla
 from ui.ayarlar import AyarlarSayfasi
 from ui.bakiye_widget import BakiyeWidget
 from ui.butce import ButceSayfasi
@@ -92,93 +93,6 @@ def _bildirim_gonder(baslik, mesaj):
         pass  # Bildirim başarısız olursa sessizce devam et
 
 
-def _borc_kontrol_thread(db_path: str):
-    """Arka planda borç vadesi yaklaşanları kontrol eder."""
-    import sqlite3
-    import time
-
-    while True:
-        try:
-            conn = sqlite3.connect(db_path)
-            cur = conn.cursor()
-            bugun = date.today()
-            # Vadesine 3 gün veya daha az kalmış aktif borçları bul
-            cur.execute(
-                "SELECT aciklama, kalan_tutar, vade_tarih FROM borclar "
-                "WHERE durum='Aktif' AND vade_tarih != '' AND vade_tarih IS NOT NULL"
-            )
-            for aciklama, kalan, vade_str in cur.fetchall():
-                try:
-                    # Tarih formatları: GG.AA.YYYY veya YYYY-MM-DD
-                    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
-                        try:
-                            vade = datetime.strptime(vade_str, fmt).date()
-                            break
-                        except ValueError:
-                            continue
-                    else:
-                        continue
-                    kalan_gun = (vade - bugun).days
-                    if 0 <= kalan_gun <= 3:
-                        _bildirim_gonder(
-                            "⏰ Ödeme Yaklaşıyor!",
-                            f"{aciklama}\nKalan: {kalan:,.0f} ₺\n"
-                            f"Vade: {vade_str} ({kalan_gun} gün)",
-                        )
-                    elif kalan_gun < 0:
-                        _bildirim_gonder(
-                            "🔴 Vade Geçti!",
-                            f"{aciklama}\nKalan: {kalan:,.0f} ₺\n"
-                            f"Vade: {vade_str} (geçti)",
-                        )
-                except Exception:
-                    pass
-            conn.close()
-        except Exception:
-            pass
-        time.sleep(1800)  # 30 dakikada bir kontrol
-
-
-def _tekrarlayan_kontrol_thread(db_path: str):
-    """Arka planda tekrarlayan işlemleri kontrol eder ve otomatik ekler."""
-    import sqlite3
-    import time
-
-    while True:
-        try:
-            conn = sqlite3.connect(db_path)
-            cur = conn.cursor()
-            bugun_gun = date.today().day
-            cur.execute(
-                "SELECT tur, kategori, aciklama, tutar FROM tekrarlayan "
-                "WHERE aktif=1 AND gun=?",
-                (bugun_gun,),
-            )
-            for tur, kategori, aciklama, tutar in cur.fetchall():
-                # Bugün zaten eklenmiş mi kontrol et
-                bugun_str = date.today().strftime("%Y-%m-%d")
-                cur.execute(
-                    "SELECT COUNT(*) FROM islemler WHERE tarih=? AND tur=? AND "
-                    "kategori=? AND aciklama=? AND tutar=?",
-                    (bugun_str, tur, kategori, aciklama or "", tutar),
-                )
-                if cur.fetchone()[0] == 0:
-                    cur.execute(
-                        "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, etiketler) "
-                        "VALUES (?,?,?,?,?, 'tekrarlayan')",
-                        (bugun_str, tur, kategori, aciklama, tutar),
-                    )
-                    conn.commit()
-                    _bildirim_gonder(
-                        "🔄 Tekrarlayan İşlem Eklendi",
-                        f"{kategori}: {tutar:,.0f} ₺ ({tur})",
-                    )
-            conn.close()
-        except Exception:
-            pass
-        time.sleep(3600)  # Saatte bir kontrol
-
-
 def _tray_olustur(app):
     """Sistem tepsisi ikonu oluştur."""
     if not HAS_TRAY:
@@ -258,6 +172,13 @@ class FinedingApp(ctk.CTk):
 
         self.menu_olustur()
         self.dashboard_ac()
+
+        # Periyodik kontroller artık ayrı daemon thread yerine Tk'nin after()
+        # zamanlamasıyla ana thread üzerinde çalışır: thread güvenliği sorunu
+        # yok, self.db doğrudan (kullanıcıya özel) kullanılabilir ve hesap
+        # değişiminde thread birikmez.
+        self._bildirilen_borclar: set = set()
+        self._kontrol_after_id = self.after(2000, self._periyodik_kontroller)
 
     # =====================================
     # SOL MENÜ
@@ -408,6 +329,53 @@ class FinedingApp(ctk.CTk):
     # SAYFA GEÇİŞİ
     # =====================================
 
+    def _periyodik_kontroller(self):
+        """Tekrarlayan işlemleri işler ve yaklaşan borç vadelerini bildirir.
+
+        Ana thread üzerinde after() ile çalışır ve kendini yeniden zamanlar.
+        """
+        try:
+            eklenenler = self.db.tekrarlayan_isle()
+            for e in eklenenler:
+                _bildirim_gonder(
+                    "🔄 Tekrarlayan İşlem Eklendi",
+                    f"{e['kategori']}: {para_formatla(e['tutar'], ondalik=0)} "
+                    f"({e['tur']})",
+                )
+            if eklenenler:
+                # Açık dashboard'u tazele
+                try:
+                    self.dashboard_ac()
+                except Exception:
+                    pass
+        except Exception:
+            logger.exception("Tekrarlayan işlem kontrolü başarısız")
+
+        try:
+            for b in self.db.yaklasan_borclar():
+                if b["id"] in self._bildirilen_borclar:
+                    continue  # bu oturumda zaten bildirildi (spam önleme)
+                self._bildirilen_borclar.add(b["id"])
+                kalan_gun = b["kalan_gun"]
+                tutar = para_formatla(b["kalan_tutar"], ondalik=0)
+                if kalan_gun < 0:
+                    _bildirim_gonder(
+                        "🔴 Vade Geçti!",
+                        f"{b['aciklama']}\nKalan: {tutar}\n"
+                        f"Vade: {b['vade_tarih']} (geçti)",
+                    )
+                else:
+                    _bildirim_gonder(
+                        "⏰ Ödeme Yaklaşıyor!",
+                        f"{b['aciklama']}\nKalan: {tutar}\n"
+                        f"Vade: {b['vade_tarih']} ({kalan_gun} gün)",
+                    )
+        except Exception:
+            logger.exception("Borç vade kontrolü başarısız")
+
+        # 30 dakikada bir tekrar
+        self._kontrol_after_id = self.after(1800_000, self._periyodik_kontroller)
+
     def _guvenli_gecis(self, sayfa_sinifi, **kwargs):
         """Sayfa değiştir - öncekini yok et, yenisini oluştur."""
         # Önceki zamanlanmış geçişi iptal et
@@ -521,6 +489,14 @@ class FinedingApp(ctk.CTk):
 
     def _gercek_cikis(self):
         """Tamamen kapat."""
+        # Periyodik kontrol zamanlamasını durdur
+        if getattr(self, "_kontrol_after_id", None) is not None:
+            try:
+                self.after_cancel(self._kontrol_after_id)
+            except Exception:
+                pass
+            self._kontrol_after_id = None
+
         # Widget'ı kapat
         if hasattr(self, "_bakiye_widget") and self._bakiye_widget:
             try:
@@ -528,22 +504,28 @@ class FinedingApp(ctk.CTk):
             except Exception:
                 pass
 
-        # Otomatik yedekle
+        # Otomatik yedekle — yol çalışma dizinine göreli değil, uygulama
+        # köküne sabit (farklı CWD'den başlatınca yedek kaybını önler)
         try:
             from datetime import datetime
-            yedek_adi = f"backups/oto_yedek_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+            yedek_dir = Path(__file__).parent / "backups"
+            yedek_dir.mkdir(exist_ok=True)
+            yedek_adi = str(
+                yedek_dir / f"oto_yedek_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+            )
             self.db.yedekle(yedek_adi)
             # Sadece son 10 yedeği tut
-            import glob
-            yedekler = sorted(glob.glob("backups/oto_yedek_*.db"), reverse=True)
+            yedekler = sorted(
+                yedek_dir.glob("oto_yedek_*.db"), reverse=True
+            )
             for eski in yedekler[10:]:
                 try:
-                    Path(eski).unlink()
-                    Path(eski + ".sha256").unlink(missing_ok=True)
+                    eski.unlink()
+                    Path(str(eski) + ".sha256").unlink(missing_ok=True)
                 except Exception:
                     pass
         except Exception:
-            pass
+            logger.exception("Otomatik yedekleme başarısız")
 
         self.db.close()
         if self.tray_icon:
@@ -614,46 +596,42 @@ class FinedingApp(ctk.CTk):
             self._bakiye_widget = BakiyeWidget(self, self.db, ana_pencere_callback=self._ana_pencereyi_goster)
 
     def hesap_degistir(self):
-        """Oturumu kapatıp giriş ekranına dön."""
-        self.db.ayar_kaydet("beni_hatirla_kullanici", "")
+        """Oturumu kapatıp giriş ekranına dön.
+
+        Önceden baslat()'ı özyinelemeli çağırıyordu; bu, mainloop'ları iç içe
+        biriktiriyor ve her seferinde yeni kontrol thread'leri başlatıyordu.
+        Artık sadece bir bayrak set edip pencereyi kapatır; dıştaki baslat()
+        döngüsü giriş ekranını yeniden gösterir (tek, düz mainloop).
+        """
+        self._hesap_degistir_istendi = True
         self.db.ayar_kaydet("aktif_kullanici_id", "")
-        self.db.close()
-        self.destroy()
-        baslat()
+        self._gercek_cikis()
 
 
 def baslat():
-    """Uygulamayı giriş ekranıyla başlat."""
+    """Uygulamayı giriş ekranıyla başlat.
+
+    Giriş ekranı ve ana pencere mainloop'ları iç içe DEĞİL, sıralı çalışır:
+    her tur giriş ekranını gösterir, giriş başarılıysa ana pencereyi açar,
+    kullanıcı 'Hesap Değiştir' derse döngü başa döner. Böylece mainloop ve
+    kontrol thread'i birikmesi olmaz.
+    """
     logger.info("Fineding başlatılıyor...")
-    db = Database()
-    logger.info("Veritabanı bağlantısı kuruldu")
+    while True:
+        db = Database()
+        giris = GirisEkrani(db, None)
+        giris.protocol(
+            "WM_DELETE_WINDOW", lambda g=giris: setattr(g, "_kapatildi", True) or g.destroy()
+        )
+        giris.mainloop()
+        kullanici = getattr(giris, "kullanici", None)
+        db.close()
+        if not kullanici:
+            break  # kullanıcı giriş yapmadan kapattı
 
-    # Arka plan borç kontrolü başlat
-    import database as db_module
-
-    kontrol = threading.Thread(
-        target=_borc_kontrol_thread,
-        args=(str(db_module.DB_PATH),),
-        daemon=True,
-    )
-    kontrol.start()
-
-    # Tekrarlayan işlem kontrolü
-    tekrar_kontrol = threading.Thread(
-        target=_tekrarlayan_kontrol_thread,
-        args=(str(db_module.DB_PATH),),
-        daemon=True,
-    )
-    tekrar_kontrol.start()
-
-    def on_login(kullanici):
         app = FinedingApp()
         app.protocol("WM_DELETE_WINDOW", app.cikis)
-
-        # Sistem tepsisi
         app.tray_icon = _tray_olustur(app)
-
-        # İlk bildirim
         _bildirim_gonder(
             "Fineding'e Hoş Geldiniz! 👋",
             f"Merhaba {kullanici['ad_soyad']}, finansal takibiniz başladı.\n"
@@ -661,9 +639,8 @@ def baslat():
         )
         app.mainloop()
 
-    giris = GirisEkrani(db, on_login)
-    giris.protocol("WM_DELETE_WINDOW", lambda: (db.close(), giris.destroy()))
-    giris.mainloop()
+        if not getattr(app, "_hesap_degistir_istendi", False):
+            break  # normal çıkış — döngüden çık
 
 
 if __name__ == "__main__":

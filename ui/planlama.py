@@ -650,8 +650,8 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             gun = int(self.t_gun.get())
             if not kat or tut <= 0:
                 raise ValueError
-            if gun < 1 or gun > 28:
-                messagebox.showwarning("Uyarı", "Gün 1-28 arası olmalı (her ay geçerli).")
+            if gun < 1 or gun > 31:
+                messagebox.showwarning("Uyarı", "Gün 1-31 arası olmalı.")
                 return
         except (ValueError, AttributeError):
             messagebox.showerror("Hata", "Tüm alanları doğru doldurun.")

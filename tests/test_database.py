@@ -458,6 +458,45 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("idx_islemler_tarih", idx)
         self.assertIn("idx_islemler_tur_tarih", idx)
 
+    def test_tekrarlayan_isle_ilk_ay(self):
+        """Günü gelmiş tekrarlayan işlem işlenmeli, gelmemiş beklemeli (#7)."""
+        from datetime import date
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 1)
+        # Ayın 15'inde çalıştır — günü (1) geçmiş, eklenmeli
+        eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 7, 15))
+        self.assertEqual(len(eklenen), 1)
+        self.assertEqual(len(self.db.tum_islemler()), 1)
+        # Aynı gün tekrar çalıştır — mükerrer eklememeli
+        eklenen2 = self.db.tekrarlayan_isle(bugun=date(2026, 7, 20))
+        self.assertEqual(len(eklenen2), 0)
+        self.assertEqual(len(self.db.tum_islemler()), 1)
+
+    def test_tekrarlayan_isle_gunu_gelmemis(self):
+        """Günü henüz gelmemiş kural bu ay işlenmemeli (#7)."""
+        from datetime import date
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 20)
+        eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 7, 5))
+        self.assertEqual(len(eklenen), 0)
+
+    def test_tekrarlayan_isle_kacan_aylar(self):
+        """Uygulama aylarca kapalı kalırsa kaçan aylar telafi edilmeli (#7)."""
+        from datetime import date
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 1)
+        self.db.tekrarlayan_isle(bugun=date(2026, 5, 10))
+        # 3 ay sonra aç — Haziran ve Temmuz da eklenmeli
+        eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 7, 10))
+        self.assertEqual(len(eklenen), 2)
+        self.assertEqual(len(self.db.tum_islemler()), 3)
+
+    def test_tekrarlayan_isle_ay_sonu(self):
+        """31. günde tanımlı kural, Şubat'ta ayın son gününe kaymalı (#7)."""
+        from datetime import date
+        self.db.tekrarlayan_ekle("Gider", "Fatura", "F", 100, 31)
+        eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 2, 28))
+        self.assertEqual(len(eklenen), 1)
+        # 2026 Şubat 28 gün — tarih 2026-02-28 olmalı
+        self.assertEqual(self.db.tum_islemler()[0][1], "2026-02-28")
+
     def test_gunluk_haftalik(self):
         """Günlük ve haftalık filtre testi."""
         from datetime import date

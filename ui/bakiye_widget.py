@@ -1,11 +1,8 @@
 """Masaüstü bakiye widget'ı — her zaman üstte mini bakiye göstergesi."""
 
-import threading
-import time
-
 import customtkinter as ctk
 
-from ui.utils import para_formatla
+from ui.money import para_formatla
 
 
 class BakiyeWidget(ctk.CTkToplevel):
@@ -47,9 +44,10 @@ class BakiyeWidget(ctk.CTkToplevel):
         self._label.pack(expand=True, fill="both", padx=8, pady=4)
 
         self.guncelle()
-        self._durdur = False
-        t = threading.Thread(target=self._periyodik_guncelle, daemon=True)
-        t.start()
+        # Tk thread-safe olmadığı için periyodik güncelleme ayrı thread'den
+        # after(0, ...) çağırmak yerine doğrudan Tk'nin after zamanlamasıyla
+        # ana thread üzerinde yapılır (nadir crash ve sızıntı riski ortadan kalkar).
+        self._after_id = self.after(30000, self._periyodik_guncelle)
 
         self.protocol("WM_DELETE_WINDOW", self.kapat)
 
@@ -114,13 +112,15 @@ class BakiyeWidget(ctk.CTkToplevel):
             self._label.configure(text="💰 --- ₺", text_color="#64748b")
 
     def _periyodik_guncelle(self):
-        while not self._durdur:
-            time.sleep(30)
-            try:
-                self.after(0, self.guncelle)
-            except Exception:
-                break
+        """Kendini yeniden zamanlayan periyodik güncelleme (ana thread)."""
+        self.guncelle()
+        self._after_id = self.after(30000, self._periyodik_guncelle)
 
     def kapat(self):
-        self._durdur = True
+        if getattr(self, "_after_id", None) is not None:
+            try:
+                self.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
         self.destroy()
