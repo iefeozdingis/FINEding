@@ -322,23 +322,27 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         if not messagebox.askyesno(
             "Aktar",
             f"{len(plan)} planlı işlem gerçek işlemlere aktarılsın mı?\n"
-            "Tarih olarak ayın 1'i kullanılacak.",
+            "Tarih olarak ayın 1'i kullanılacak.\n"
+            "(Daha önce aktarılmış kalemler tekrar aktarılmaz.)",
         ):
             return
 
         tarih = f"01.{ay:02d}.{yil}"
-        eklenen = 0
-        for satir in plan:
-            try:
-                if satir[4] == "Gelir":
-                    self.db.gelir_ekle(tarih, satir[3], satir[5], satir[6])
-                else:
-                    self.db.gider_ekle(tarih, satir[3], satir[5], satir[6])
-                eklenen += 1
-            except Exception:
-                pass
+        try:
+            sonuc = self.db.plani_aktar(ay, yil, tarih)
+        except Exception as e:
+            messagebox.showerror(
+                "Hata", f"Aktarım sırasında bir sorun oluştu:\n{e}"
+            )
+            return
 
-        messagebox.showinfo("Başarılı", f"{eklenen} işlem aktarıldı.")
+        mesaj = f"{sonuc['aktarilan']} işlem aktarıldı."
+        if sonuc["atlanan"]:
+            mesaj += (
+                f"\n{sonuc['atlanan']} kalem daha önce aktarıldığı için atlandı."
+            )
+        messagebox.showinfo("Başarılı", mesaj)
+        self._planlama_yenile()
         if self.dashboard_callback:
             self.dashboard_callback()
 
@@ -404,6 +408,15 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             height=32,
             fg_color="#0d9488",
             command=self._borc_ekle_ac,
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            btn_bar,
+            text="💵 Ödeme Yap",
+            width=110,
+            height=32,
+            fg_color="#16a34a",
+            command=self._borc_odeme,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
@@ -516,6 +529,21 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         self.db.borc_ekle(**data)
         pencere.destroy()
         self._borclari_yenile()
+
+    def _borc_odeme(self):
+        secili = self.b_tablo.selection()
+        if not secili:
+            messagebox.showwarning("Uyarı", "Ödeme için bir satır seçin.")
+            return
+        veri = self.b_tablo.item(secili[0])["values"]
+        BorcOdemePenceresi(
+            self, int(veri[0]), self.db, self._borc_odeme_sonrasi
+        )
+
+    def _borc_odeme_sonrasi(self):
+        self._borclari_yenile()
+        if self.dashboard_callback:
+            self.dashboard_callback()
 
     def _borc_duzenle(self):
         secili = self.b_tablo.selection()
@@ -789,9 +817,15 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             except ValueError:
                 messagebox.showerror("Hata", "Geçerli bir tutar girin.")
                 return
-            self.db.tasarruf_katki_ekle(hedef["id"], tutar)
+            try:
+                self.db.tasarruf_katki_ekle(hedef["id"], tutar)
+            except Exception as e:
+                messagebox.showerror("Hata", f"Katkı eklenemedi:\n{e}")
+                return
             pencere.destroy()
             self._tasarruf_yenile()
+            if self.dashboard_callback:
+                self.dashboard_callback()
 
         ctk.CTkButton(pencere, text="💾 Ekle", width=180, command=kaydet).pack(pady=12)
 
@@ -933,6 +967,85 @@ class BorcPenceresi(ctk.CTkToplevel):
             "vade": self.vade.get(),
         }
         self._kaydet_cb(self, data)
+
+
+class BorcOdemePenceresi(ctk.CTkToplevel):
+    """Borç/Alacak ödeme penceresi — kalanı düşürür ve gerçek işlem üretir."""
+
+    def __init__(self, parent, borc_id, db, yenile_cb):
+        super().__init__(parent)
+        self.db = db
+        self.borc_id = borc_id
+        self._yenile_cb = yenile_cb
+        self.title("Ödeme Yap")
+        self.geometry("380x340")
+        self.resizable(False, False)
+
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+        self.lift()
+        self.focus_force()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        borclar = db.borclari_listele("Aktif") + db.borclari_listele("Ödendi")
+        mevcut = next((b for b in borclar if b["id"] == borc_id), None)
+        if not mevcut:
+            messagebox.showerror("Hata", "Kayıt bulunamadı.")
+            self.destroy()
+            return
+        self._mevcut = mevcut
+
+        ctk.CTkLabel(
+            self, text="💵 Ödeme Yap", font=("Segoe UI", 20, "bold")
+        ).pack(pady=(16, 4))
+        ctk.CTkLabel(
+            self, text=f"📌 {mevcut['aciklama']}", font=("Segoe UI", 13)
+        ).pack()
+        ctk.CTkLabel(
+            self,
+            text=f"Kalan: {para_formatla(mevcut['kalan_tutar'])}",
+            font=("Segoe UI", 12), text_color="#94a3b8",
+        ).pack(pady=(0, 8))
+
+        self.tutar = ctk.CTkEntry(self, width=300, placeholder_text="Ödeme Tutarı (₺)")
+        self.tutar.pack(pady=8)
+        tutar_bind(self.tutar)
+
+        self.tarih = ctk.CTkEntry(self, width=300, placeholder_text="Tarih (GG.AA.YYYY)")
+        self.tarih.insert(0, datetime.now().strftime("%d.%m.%Y"))
+        self.tarih.pack(pady=8)
+        tarih_bind(self.tarih)
+
+        self.islem_olustur = ctk.CTkCheckBox(
+            self, text="Gelir/gider işlemi olarak da kaydet"
+        )
+        self.islem_olustur.select()
+        self.islem_olustur.pack(pady=8)
+
+        ctk.CTkButton(
+            self, text="💾 Ödemeyi Kaydet", width=220, fg_color="#16a34a",
+            command=self._kaydet,
+        ).pack(pady=12)
+
+    def _kaydet(self):
+        try:
+            tutar = tutar_oku(self.tutar)
+            if tutar <= 0:
+                messagebox.showwarning("Uyarı", "Ödeme tutarı sıfırdan büyük olmalı.")
+                return
+        except ValueError:
+            messagebox.showerror("Hata", "Geçerli bir tutar girin.")
+            return
+        try:
+            self.db.borc_odeme_yap(
+                self.borc_id, tutar, self.tarih.get(),
+                islem_olustur=bool(self.islem_olustur.get()),
+            )
+        except Exception as e:
+            messagebox.showerror("Hata", f"Ödeme kaydedilemedi:\n{e}")
+            return
+        self.destroy()
+        self._yenile_cb()
 
 
 class BorcDuzenlePenceresi(ctk.CTkToplevel):

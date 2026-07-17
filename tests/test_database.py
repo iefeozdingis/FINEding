@@ -294,6 +294,85 @@ class DatabaseTests(unittest.TestCase):
         self.db.tasarruf_hedefi_sil(hedef_id)
         self.assertEqual(len(self.db.tasarruf_hedefleri_listele()), 0)
 
+    def test_tasarruf_katki_islem_olusturur(self):
+        """Tasarruf katkısı ana işlem listesine Gider olarak yansımalı (#4)."""
+        hedef_id = self.db.tasarruf_hedefi_ekle("Tatil", 10000)
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Maaş", 10000)
+        bakiye_once = self.db.bakiye()
+
+        self.db.tasarruf_katki_ekle(hedef_id, 2500)
+        # Katkı Gider olarak kaydedilmeli, bakiye 2500 azalmalı
+        self.assertEqual(self.db.bakiye(), bakiye_once - 2500)
+        gider = self.db.islem_ara("Tasarruf", "Gider")
+        self.assertEqual(len(gider), 1)
+        self.assertEqual(gider[0][5], 2500.0)
+
+        # Geri çekme Gelir olarak yansımalı, biriken bakiyeyle sınırlı
+        self.db.tasarruf_katki_ekle(hedef_id, -1000)
+        self.assertEqual(self.db.bakiye(), bakiye_once - 1500)
+        hedef = self.db.tasarruf_hedefleri_listele()[0]
+        self.assertEqual(hedef["biriken_tutar"], 1500.0)
+
+    def test_tasarruf_katki_islemsiz(self):
+        """islem_olustur=False iken sadece biriken güncellenir (eski test uyumu)."""
+        hedef_id = self.db.tasarruf_hedefi_ekle("Araba", 50000)
+        self.db.tasarruf_katki_ekle(hedef_id, 3000, islem_olustur=False)
+        self.assertEqual(len(self.db.tum_islemler()), 0)
+        self.assertEqual(
+            self.db.tasarruf_hedefleri_listele()[0]["biriken_tutar"], 3000.0
+        )
+
+    def test_borc_odeme_yap(self):
+        """Borç ödemesi kalanı düşürüp gider işlemi üretmeli (#10)."""
+        borc_id = self.db.borc_ekle(
+            "Borç", "Kredi Kartı", "Banka", 10000, 10000, "01.06.2026", "01.12.2026"
+        )
+        self.db.borc_odeme_yap(borc_id, 3000, "15.07.2026")
+
+        borc = self.db.borclari_listele("Aktif")[0]
+        self.assertEqual(borc["kalan_tutar"], 7000.0)
+        gider = self.db.islem_ara("ödemesi", "Gider")
+        self.assertEqual(len(gider), 1)
+        self.assertEqual(gider[0][5], 3000.0)
+        gecmis = self.db.borc_odemeleri(borc_id)
+        self.assertEqual(len(gecmis), 1)
+
+        # Tam ödeme → Ödendi
+        self.db.borc_odeme_yap(borc_id, 7000, "20.07.2026")
+        self.assertEqual(len(self.db.borclari_listele("Ödendi")), 1)
+
+    def test_borc_tarih_normalize(self):
+        """Borç tarihleri ISO'ya normalize edilip doğru sıralanmalı (#18)."""
+        self.db.borc_ekle("Borç", "A", "", 100, 100, "01.06.2026", "15.12.2026")
+        self.db.borc_ekle("Borç", "B", "", 100, 100, "01.06.2026", "05.01.2027")
+        self.db.borc_ekle("Borç", "C", "", 100, 100, "01.06.2026", "20.11.2026")
+        vadeler = [b["vade_tarih"] for b in self.db.borclari_listele("Aktif")]
+        # ISO formatında ve kronolojik sırada olmalı
+        self.assertEqual(vadeler, ["2026-11-20", "2026-12-15", "2027-01-05"])
+
+    def test_plani_aktar_mukerrer_koruma(self):
+        """Plan aktarımı ikinci çağrıda kalemleri tekrar aktarmamalı (#33)."""
+        self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Maaş", 15000)
+        self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Kira", 5000)
+
+        sonuc1 = self.db.plani_aktar(7, 2026, "01.07.2026")
+        self.assertEqual(sonuc1["aktarilan"], 2)
+        self.assertEqual(sonuc1["atlanan"], 0)
+        self.assertEqual(len(self.db.tum_islemler()), 2)
+
+        # İkinci aktarım hiçbir şey eklememeli
+        sonuc2 = self.db.plani_aktar(7, 2026, "01.07.2026")
+        self.assertEqual(sonuc2["aktarilan"], 0)
+        self.assertEqual(sonuc2["atlanan"], 2)
+        self.assertEqual(len(self.db.tum_islemler()), 2)
+
+    def test_import_turk_format_tutar(self):
+        """İçe aktarma Türk formatlı tutarları (1.234,56) okuyabilmeli (#40)."""
+        self.assertEqual(self.db._tutar_parse("1.234,56"), 1234.56)
+        self.assertEqual(self.db._tutar_parse("12,5"), 12.5)
+        self.assertEqual(self.db._tutar_parse("1500"), 1500.0)
+        self.assertEqual(self.db._tutar_parse("1,234.56"), 1234.56)
+
     def test_gunluk_haftalik(self):
         """Günlük ve haftalık filtre testi."""
         from datetime import date

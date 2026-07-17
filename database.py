@@ -43,6 +43,16 @@ def _sifre_dogrula(sifre: str, hash_deger: str) -> bool:
     return legacy_hash == hash_deger
 
 
+def para_yuvarla(tutar: Any) -> float:
+    """Tutarı 2 ondalık haneye yuvarlar (kuruş).
+
+    Para REAL (float) saklandığı için 0.1+0.2 sınıfı birikimli yuvarlama
+    hataları oluşabiliyor; tüm yazma noktalarında bilinçli yuvarlama
+    uygulanarak bakiye/bütçe karşılaştırmaları tutarlı tutulur.
+    """
+    return round(float(tutar), 2)
+
+
 def normalize_date(tarih_str: str) -> str:
     """Normalize a date string to ISO YYYY-MM-DD.
 
@@ -130,6 +140,13 @@ class Database:
             tutar REAL NOT NULL
         )
         """)
+        # Aktarım tarihi (mükerrer aktarımı önlemek için, önceden yoksa ekle)
+        try:
+            self.cursor.execute(
+                "ALTER TABLE planlanan ADD COLUMN aktarim_tarihi TEXT DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            pass
 
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS borclar(
@@ -179,6 +196,16 @@ class Database:
         )
         """)
 
+        # Borç/alacak ödeme geçmişi
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS borc_odemeler(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            borc_id INTEGER NOT NULL,
+            tarih TEXT NOT NULL,
+            tutar REAL NOT NULL
+        )
+        """)
+
         # Tasarruf hedefleri
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS tasarruf_hedefleri(
@@ -223,7 +250,7 @@ class Database:
         VALUES (?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gelir", kategori, aciklama, tutar, etiketler),
+            (tarih_iso, "Gelir", kategori, aciklama, para_yuvarla(tutar), etiketler),
         )
 
         self.conn.commit()
@@ -246,7 +273,7 @@ class Database:
         VALUES (?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gider", kategori, aciklama, tutar, etiketler),
+            (tarih_iso, "Gider", kategori, aciklama, para_yuvarla(tutar), etiketler),
         )
 
         self.conn.commit()
@@ -301,6 +328,7 @@ class Database:
         etiketler: Optional[str] = None,
     ) -> None:
         tarih_iso = normalize_date(tarih)
+        tutar = para_yuvarla(tutar)
         if etiketler is None:
             self.cursor.execute(
                 """
@@ -471,13 +499,38 @@ class Database:
         finally:
             wb.close()
 
+    @staticmethod
+    def _tutar_parse(ham: Any) -> float:
+        """İçe aktarımda tutarı hem sade hem Türk (1.234,56) formatından okur."""
+        if ham is None:
+            return 0.0
+        s = str(ham).strip().replace("₺", "").replace(" ", "")
+        if not s:
+            return 0.0
+        # datetime hücresi vb. sayı olmayan değerleri reddet
+        if any(c not in "0123456789.,-" for c in s):
+            raise ValueError(f"Geçersiz tutar: {ham!r}")
+        son_nokta = s.rfind(".")
+        son_virgul = s.rfind(",")
+        if son_nokta != -1 and son_virgul != -1:
+            ondalik = "." if son_nokta > son_virgul else ","
+            binlik = "," if ondalik == "." else "."
+            s = s.replace(binlik, "").replace(ondalik, ".")
+        elif son_virgul != -1:
+            # Türk formatı: virgül ondalık ayracı
+            if s.count(",") == 1 and len(s) - son_virgul - 1 in (1, 2):
+                s = s.replace(",", ".")
+            else:
+                s = s.replace(",", "")
+        return float(s)
+
     def _satir_ekle_guvenli(self, satir: Dict[str, str]) -> int:
         """CSV/Excel içe aktarımı için ortak satır doğrulama ve ekleme mantığı (commit çağırmaz)."""
         tarih = normalize_date(satir.get("tarih", ""))
         tur = satir.get("tur", "").strip()
         kategori = satir.get("kategori", "").strip()
         aciklama = satir.get("aciklama", "").strip() or None
-        tutar = float(satir.get("tutar", "0") or "0")
+        tutar = para_yuvarla(self._tutar_parse(satir.get("tutar", "0")))
         etiketler = satir.get("etiketler", "").strip()
         if tur not in ("Gelir", "Gider") or not kategori:
             return 0
@@ -495,7 +548,7 @@ class Database:
         VALUES (?, ?, ?, ?)
         ON CONFLICT(ay, yil, kategori) DO UPDATE SET tutar=excluded.tutar
         """,
-            (ay, yil, kategori, tutar),
+            (ay, yil, kategori, para_yuvarla(tutar)),
         )
         self.conn.commit()
 
@@ -693,7 +746,7 @@ class Database:
         self.cursor.execute(
             "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, tutar) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (ay, yil, kategori, tur, aciklama, tutar),
+            (ay, yil, kategori, tur, aciklama, para_yuvarla(tutar)),
         )
         self.conn.commit()
         assert self.cursor.lastrowid is not None
@@ -704,7 +757,7 @@ class Database:
     ) -> None:
         self.cursor.execute(
             "UPDATE planlanan SET kategori=?, tur=?, aciklama=?, tutar=? " "WHERE id=?",
-            (kategori, tur, aciklama, tutar, id),
+            (kategori, tur, aciklama, para_yuvarla(tutar), id),
         )
         self.conn.commit()
 
@@ -718,6 +771,41 @@ class Database:
             (ay, yil),
         )
         return self.cursor.fetchall()
+
+    def plani_aktar(self, ay: int, yil: int, tarih: str) -> Dict[str, int]:
+        """Aktarılmamış plan kalemlerini gerçek işlemlere çevirir.
+
+        Mükerrer aktarım koruması: aktarim_tarihi dolu kalemler atlanır,
+        böylece butona ikinci kez basmak gelir/gideri ikiye katlamaz.
+        {'aktarilan': N, 'atlanan': M} döner.
+        """
+        tarih_iso = normalize_date(tarih)
+        self.cursor.execute(
+            "SELECT id, kategori, tur, aciklama, tutar, "
+            "COALESCE(aktarim_tarihi,'') FROM planlanan WHERE ay=? AND yil=?",
+            (ay, yil),
+        )
+        satirlar = self.cursor.fetchall()
+        aktarilan = 0
+        atlanan = 0
+        bugun = datetime.now().strftime("%Y-%m-%d %H:%M")
+        for pid, kategori, tur, aciklama, tutar, aktarim in satirlar:
+            if aktarim:
+                atlanan += 1
+                continue
+            islem_tur = "Gelir" if tur == "Gelir" else "Gider"
+            self.cursor.execute(
+                "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
+                "etiketler) VALUES (?,?,?,?,?,?)",
+                (tarih_iso, islem_tur, kategori, aciklama or "",
+                 para_yuvarla(tutar), "plan"),
+            )
+            self.cursor.execute(
+                "UPDATE planlanan SET aktarim_tarihi=? WHERE id=?", (bugun, pid)
+            )
+            aktarilan += 1
+        self.conn.commit()
+        return {"aktarilan": aktarilan, "atlanan": atlanan}
 
     def planlanan_ozet(self, ay: int, yil: int) -> Dict[str, float]:
         self.cursor.execute(
@@ -744,11 +832,17 @@ class Database:
         baslangic: str,
         vade: str,
     ) -> int:
+        # Borç tarihleri normalize EDİLMİYORDU: GG.AA.YYYY string'i üzerinde
+        # ORDER BY vade_tarih sözlüksel sıralama yapıyor, vadeler yanlış
+        # sıralanıyordu. Diğer tablolar gibi ISO'ya çevriliyor.
+        bas_iso = normalize_date(baslangic) if baslangic else ""
+        vade_iso = normalize_date(vade) if vade else ""
         self.cursor.execute(
             "INSERT INTO borclar (tur, aciklama, kisi, toplam_tutar, "
             "kalan_tutar, baslangic_tarih, vade_tarih, durum) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'Aktif')",
-            (tur, aciklama, kisi, toplam, kalan, baslangic, vade),
+            (tur, aciklama, kisi, para_yuvarla(toplam), para_yuvarla(kalan),
+             bas_iso, vade_iso),
         )
         self.conn.commit()
         assert self.cursor.lastrowid is not None
@@ -757,9 +851,70 @@ class Database:
     def borc_guncelle(self, id: int, kalan: float, durum: str) -> None:
         self.cursor.execute(
             "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=?",
-            (kalan, durum, id),
+            (para_yuvarla(kalan), durum, id),
         )
         self.conn.commit()
+
+    def borc_odeme_yap(
+        self, borc_id: int, odeme_tutar: float, tarih: str,
+        islem_olustur: bool = True,
+    ) -> None:
+        """Borç/alacağa ödeme işler: kalanı düşürür, ödeme geçmişine yazar ve
+        (istenirse) gerçek bir gelir/gider işlemi oluşturur.
+
+        Önceden ödeme yalnızca 'kalan tutarı elle düşür' şeklindeydi; para
+        bakiyeye hiç yansımıyordu. Artık ödeme atomik olarak: (1) islemler'e
+        Borç için Gider / Alacak (tahsilat) için Gelir kaydı, (2) borc_odemeler
+        geçmiş satırı, (3) kalan_tutar düşümü + durum güncellemesi yapar.
+        """
+        odeme = para_yuvarla(odeme_tutar)
+        tarih_iso = normalize_date(tarih)
+        try:
+            self.cursor.execute("BEGIN")
+            self.cursor.execute(
+                "SELECT tur, aciklama, kalan_tutar FROM borclar WHERE id=?",
+                (borc_id,),
+            )
+            row = self.cursor.fetchone()
+            if row is None:
+                raise ValueError("Borç kaydı bulunamadı")
+            tur, aciklama, kalan = row[0], row[1], float(row[2])
+            yeni_kalan = para_yuvarla(max(0.0, kalan - odeme))
+            yeni_durum = "Ödendi" if yeni_kalan <= 0 else "Aktif"
+
+            if islem_olustur:
+                islem_tur = "Gider" if tur == "Borç" else "Gelir"
+                self.cursor.execute(
+                    "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
+                    "tutar, etiketler) VALUES (?,?,?,?,?,?)",
+                    (tarih_iso, islem_tur, "Borç/Alacak",
+                     f"{tur} ödemesi: {aciklama}", odeme, "borc-odeme"),
+                )
+            self.cursor.execute(
+                "INSERT INTO borc_odemeler (borc_id, tarih, tutar) "
+                "VALUES (?,?,?)",
+                (borc_id, tarih_iso, odeme),
+            )
+            self.cursor.execute(
+                "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=?",
+                (yeni_kalan, yeni_durum, borc_id),
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def borc_odemeleri(self, borc_id: int) -> List[Dict[str, Any]]:
+        """Bir borç/alacağın ödeme geçmişini döner."""
+        self.cursor.execute(
+            "SELECT id, tarih, tutar FROM borc_odemeler WHERE borc_id=? "
+            "ORDER BY tarih",
+            (borc_id,),
+        )
+        return [
+            {"id": r[0], "tarih": r[1], "tutar": float(r[2])}
+            for r in self.cursor.fetchall()
+        ]
 
     def borc_sil(self, id: int) -> None:
         self.cursor.execute("DELETE FROM borclar WHERE id=?", (id,))
@@ -965,7 +1120,7 @@ class Database:
         self.cursor.execute(
             "INSERT INTO tasarruf_hedefleri (ad, hedef_tutar, biriken_tutar, hedef_tarih) "
             "VALUES (?, ?, 0, ?)",
-            (ad, hedef_tutar, hedef_tarih_iso),
+            (ad, para_yuvarla(hedef_tutar), hedef_tarih_iso),
         )
         self.conn.commit()
         return self.cursor.lastrowid
@@ -983,13 +1138,54 @@ class Database:
             for r in self.cursor.fetchall()
         ]
 
-    def tasarruf_katki_ekle(self, id: int, tutar: float) -> None:
-        """Hedefe katkı ekler (negatif tutar geri çekme için kullanılabilir)."""
-        self.cursor.execute(
-            "UPDATE tasarruf_hedefleri SET biriken_tutar = MAX(0, biriken_tutar + ?) WHERE id=?",
-            (tutar, id),
+    def tasarruf_katki_ekle(
+        self, id: int, tutar: float, islem_olustur: bool = True,
+        tarih: Optional[str] = None,
+    ) -> None:
+        """Hedefe katkı ekler (negatif tutar geri çekme).
+
+        Önceden katkı yalnızca biriken_tutar'ı güncelliyor, ana işlem
+        listesine hiç yansımıyordu: kullanıcı aynı parayı hem 'birikmiş'
+        hem 'harcanabilir' görüyordu. Artık katkı 'Tasarruf' kategorisinde
+        bir Gider (geri çekme Gelir) işlemi de oluşturur; böylece bakiye
+        birikimle tutarlı kalır. Geri çekmede fiilen düşen tutar biriken
+        bakiyeyle sınırlanır (MAX(0,...) ile para izi kaybını önler).
+        """
+        from datetime import date
+        katki = para_yuvarla(tutar)
+        tarih_iso = normalize_date(tarih) if tarih else date.today().strftime(
+            "%Y-%m-%d"
         )
-        self.conn.commit()
+        try:
+            self.cursor.execute("BEGIN")
+            self.cursor.execute(
+                "SELECT ad, biriken_tutar FROM tasarruf_hedefleri WHERE id=?",
+                (id,),
+            )
+            row = self.cursor.fetchone()
+            if row is None:
+                raise ValueError("Tasarruf hedefi bulunamadı")
+            ad, biriken = row[0], float(row[1])
+            yeni_biriken = para_yuvarla(max(0.0, biriken + katki))
+            fiili_delta = para_yuvarla(yeni_biriken - biriken)
+
+            if islem_olustur and fiili_delta != 0:
+                # Birikime giden para Gider, geri çekilen para Gelir
+                islem_tur = "Gider" if fiili_delta > 0 else "Gelir"
+                self.cursor.execute(
+                    "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
+                    "tutar, etiketler) VALUES (?,?,?,?,?,?)",
+                    (tarih_iso, islem_tur, "Tasarruf",
+                     f"Tasarruf: {ad}", abs(fiili_delta), "tasarruf"),
+                )
+            self.cursor.execute(
+                "UPDATE tasarruf_hedefleri SET biriken_tutar=? WHERE id=?",
+                (yeni_biriken, id),
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def tasarruf_hedefi_sil(self, id: int) -> None:
         self.cursor.execute("DELETE FROM tasarruf_hedefleri WHERE id=?", (id,))
