@@ -5,7 +5,13 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from ui.utils import tarih_bind, treeview_tema_uygula, tutar_bind, tutar_oku
+from ui.utils import (
+    para_formatla,
+    tarih_bind,
+    treeview_tema_uygula,
+    tutar_bind,
+    tutar_oku,
+)
 
 
 class PlanlamaSayfasi(ctk.CTkFrame):
@@ -170,15 +176,16 @@ class PlanlamaSayfasi(ctk.CTkFrame):
                     satir[3],
                     satir[4],
                     satir[5] or "",
-                    f"{satir[6]:,.2f}",
+                    para_formatla(satir[6], sembol=False),
                 ),
             )
 
         ozet = self.db.planlanan_ozet(ay, yil)
         net = ozet["Gelir"] - ozet["Gider"]
         self.p_ozet.configure(
-            text=f"📥 {ozet['Gelir']:,.0f} ₺  |  📤 {ozet['Gider']:,.0f} ₺  |  "
-            f"{'✅' if net >= 0 else '🔴'} Net: {net:,.0f} ₺"
+            text=f"📥 {para_formatla(ozet['Gelir'], ondalik=0)}  |  "
+            f"📤 {para_formatla(ozet['Gider'], ondalik=0)}  |  "
+            f"{'✅' if net >= 0 else '🔴'} Net: {para_formatla(net, ondalik=0)}"
         )
 
     def _satir_ekle(self):
@@ -483,8 +490,8 @@ class PlanlamaSayfasi(ctk.CTkFrame):
                     b["tur"],
                     b["aciklama"],
                     b["kisi"] or "",
-                    f"{b['toplam_tutar']:,.2f} ₺",
-                    f"{b['kalan_tutar']:,.2f} ₺",
+                    para_formatla(b['toplam_tutar']),
+                    para_formatla(b['kalan_tutar']),
                     b["baslangic_tarih"] or "",
                     b["vade_tarih"] or "",
                     b["durum"],
@@ -497,8 +504,9 @@ class PlanlamaSayfasi(ctk.CTkFrame):
                     toplam_alacak += b["kalan_tutar"]
 
         self.b_ozet.configure(
-            text=f"🔴 Borç: {toplam_borc:,.0f} ₺  |  🟢 Alacak: {toplam_alacak:,.0f} ₺  |  "
-            f"📊 Net: {toplam_alacak - toplam_borc:,.0f} ₺"
+            text=f"🔴 Borç: {para_formatla(toplam_borc, ondalik=0)}  |  "
+            f"🟢 Alacak: {para_formatla(toplam_alacak, ondalik=0)}  |  "
+            f"📊 Net: {para_formatla(toplam_alacak - toplam_borc, ondalik=0)}"
         )
 
     def _borc_ekle_ac(self):
@@ -601,7 +609,8 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         for t in self.db.tekrarlayan_listele():
             self.t_liste.insert("", "end", values=(
                 t["id"], t["tur"], t["kategori"], t["aciklama"],
-                f"{t['tutar']:,.2f}", t["gun"], "✅" if t["aktif"] else "❌"
+                para_formatla(t['tutar'], sembol=False), t["gun"],
+                "✅" if t["aktif"] else "❌"
             ))
 
     def _tekrarlayan_ekle(self):
@@ -741,7 +750,9 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             alt = ctk.CTkFrame(kart, fg_color="transparent")
             alt.pack(fill="x", padx=12, pady=(2, 10))
             ctk.CTkLabel(
-                alt, text=f"{h['biriken_tutar']:,.2f} / {h['hedef_tutar']:,.2f} ₺",
+                alt,
+                text=f"{para_formatla(h['biriken_tutar'], sembol=False)} / "
+                f"{para_formatla(h['hedef_tutar'])}",
                 font=("Segoe UI", 11), text_color="#94a3b8",
             ).pack(side="left")
 
@@ -960,7 +971,10 @@ class BorcDuzenlePenceresi(ctk.CTkToplevel):
         ctk.CTkLabel(self, text=f"📌 {mevcut['aciklama']}").pack()
 
         self.kalan = ctk.CTkEntry(self, width=300, placeholder_text="Kalan Tutar")
-        self.kalan.insert(0, str(mevcut["kalan_tutar"]))
+        # str(float) yazmak ("1500.0") tutar_oku'nun noktayı binlik ayraç
+        # sanmasına ve kalanın 10x-100x şişmesine yol açıyordu — alan,
+        # okunduğu formatla aynı (Türk) formatta doldurulmalı.
+        self.kalan.insert(0, para_formatla(mevcut["kalan_tutar"], sembol=False))
         self.kalan.pack(pady=8)
         tutar_bind(self.kalan)
 

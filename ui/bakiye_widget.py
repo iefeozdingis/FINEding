@@ -5,6 +5,8 @@ import time
 
 import customtkinter as ctk
 
+from ui.utils import para_formatla
+
 
 class BakiyeWidget(ctk.CTkToplevel):
     """Masaüstünde sabit duran, frameless mini bakiye penceresi.
@@ -105,7 +107,7 @@ class BakiyeWidget(ctk.CTkToplevel):
             renk = "#22c55e" if bakiye >= 0 else "#ef4444"
             emoji = "📈" if bakiye >= 0 else "📉"
             self._label.configure(
-                text=f"{emoji} Bakiye: {bakiye:,.2f} ₺",
+                text=f"{emoji} Bakiye: {para_formatla(bakiye)}",
                 text_color=renk,
             )
         except Exception:

@@ -4,6 +4,22 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
+# Saf para fonksiyonları GUI'siz money modülünde yaşar (test edilebilirlik);
+# geriye dönük uyumluluk için buradan yeniden ihraç edilir.
+from ui.money import para_formatla, para_parse
+
+__all__ = [
+    "para_formatla",
+    "para_parse",
+    "tema_renkleri",
+    "treeview_tema_uygula",
+    "tarih_formatla",
+    "tutar_formatla",
+    "tarih_bind",
+    "tutar_bind",
+    "tutar_oku",
+]
+
 
 def tema_renkleri():
     """Uygulamanın aydınlık/karanlık moduna göre renk paleti döner."""
@@ -122,7 +138,9 @@ def tutar_formatla(event=None):
 
     if "," in ham:
         parts = ham.split(",")
-        kurus = "".join(c for c in parts[-1] if c.isdigit())[:3]
+        # Kuruş en fazla 2 hane: 3. hane "10,999" gibi ekranda 11,00
+        # görünen ama 10.999 kaydedilen tutarsız değerler üretiyordu
+        kurus = "".join(c for c in parts[-1] if c.isdigit())[:2]
         tam_kisim = "".join(c for c in ",".join(parts[:-1]) if c.isdigit())
     else:
         kurus = None
@@ -164,7 +182,4 @@ def tutar_bind(widget):
 
 def tutar_oku(widget) -> float:
     """Formatlı tutar widget'ından float değer okur."""
-    ham = widget.get().strip()
-    # Noktaları kaldır, virgülü noktaya çevir
-    temiz = ham.replace(".", "").replace(",", ".")
-    return float(temiz)
+    return para_parse(widget.get())

@@ -3,7 +3,7 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from ui.utils import tutar_bind, tutar_oku
+from ui.utils import para_formatla, tutar_bind, tutar_oku
 
 
 class ButceSayfasi(ctk.CTkFrame):
@@ -102,9 +102,9 @@ class ButceSayfasi(ctk.CTkFrame):
             asim_var = False
             for item in durumlar:
                 kategori = item["kategori"]
-                butce_str = f"{item['butce']:,.2f} ₺"
-                harcanan_str = f"{item['harcanan']:,.2f} ₺"
-                kalan_str = f"{item['kalan']:,.2f} ₺"
+                butce_str = para_formatla(item['butce'])
+                harcanan_str = para_formatla(item['harcanan'])
+                kalan_str = para_formatla(item['kalan'])
                 durum_icon = "✅"
                 if item["kalan"] < 0:
                     durum_icon = "🔴 AŞILDI!"

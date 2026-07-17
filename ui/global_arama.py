@@ -4,7 +4,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
-from ui.utils import treeview_tema_uygula
+from ui.utils import para_formatla, treeview_tema_uygula
 
 
 class GlobalAramaPenceresi(ctk.CTkToplevel):
@@ -66,7 +66,7 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
             tarih, tur, kategori, aciklama, tutar = row[1], row[2], row[3], row[4], row[5]
             self.sonuc_liste.insert(
                 "", "end",
-                values=(tur, tarih, kategori, aciklama or "", f"{tutar:,.2f} ₺"),
+                values=(tur, tarih, kategori, aciklama or "", para_formatla(tutar)),
             )
             self._sonuclar.append("islem")
 
@@ -78,7 +78,7 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
                     "", "end",
                     values=(
                         b["tur"], b.get("vade_tarih") or "", b.get("kisi") or "",
-                        b["aciklama"], f"{b['kalan_tutar']:,.2f} ₺",
+                        b["aciklama"], para_formatla(b['kalan_tutar']),
                     ),
                 )
                 self._sonuclar.append("borc")

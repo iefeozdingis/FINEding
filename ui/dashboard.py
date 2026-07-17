@@ -3,7 +3,13 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from database import normalize_date
-from ui.utils import tarih_bind, treeview_tema_uygula, tutar_bind, tutar_oku
+from ui.utils import (
+    para_formatla,
+    tarih_bind,
+    treeview_tema_uygula,
+    tutar_bind,
+    tutar_oku,
+)
 
 
 class IslemDuzenlemePenceresi(ctk.CTkToplevel):
@@ -61,10 +67,7 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         self.tutar = ctk.CTkEntry(self, width=300, placeholder_text="Tutar")
         # Tutarı formatlı göster
         try:
-            t = float(islem[5])
-            self.tutar.insert(
-                0, f"{t:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            )
+            self.tutar.insert(0, para_formatla(float(islem[5]), sembol=False))
         except (ValueError, TypeError):
             self.tutar.insert(0, str(islem[5]))
         self.tutar.pack(pady=8)
@@ -170,8 +173,10 @@ class Dashboard(ctk.CTkFrame):
         ).pack()
 
         # Değer - para formatı
-        if isinstance(deger, (int, float)):
-            deger_text = f"{deger:,.2f} ₺"
+        if isinstance(deger, float):
+            deger_text = para_formatla(deger)
+        elif isinstance(deger, int):
+            deger_text = str(deger)
         else:
             deger_text = str(deger)
         ctk.CTkLabel(
@@ -258,7 +263,8 @@ class Dashboard(ctk.CTkFrame):
                 row=4, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
             )
             uyari_text = "⚠️ Bütçe Aşımı: " + ", ".join(
-                f"{b['kategori']} ({b['kalan']:,.0f} ₺)" for b in asan_kategoriler
+                f"{b['kategori']} ({para_formatla(b['kalan'], ondalik=0)})"
+                for b in asan_kategoriler
             )
             ctk.CTkLabel(
                 uyari_frame,
@@ -309,7 +315,7 @@ class Dashboard(ctk.CTkFrame):
                 bar_fill = ctk.CTkFrame(bar_bg, height=14, fg_color=renk, corner_radius=7)
                 bar_fill.place(relx=0, rely=0, relheight=1, relwidth=min(oran / 100, 1))
                 ctk.CTkLabel(bar_frame, text=f"%{int(oran)}", font=("Segoe UI", 10), width=40).pack(side="left")
-                ctk.CTkLabel(bar_frame, text=f"{b['harcanan']:,.0f}/{b['butce']:,.0f} ₺", font=("Segoe UI", 10), width=120, text_color="#94a3b8").pack(side="left")
+                ctk.CTkLabel(bar_frame, text=f"{para_formatla(b['harcanan'], sembol=False, ondalik=0)}/{para_formatla(b['butce'], ondalik=0)}", font=("Segoe UI", 10), width=120, text_color="#94a3b8").pack(side="left")
 
         # ARAMA / FİLTRE
         arama_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
@@ -737,7 +743,7 @@ class Dashboard(ctk.CTkFrame):
                     self.db.gelir_ekle(bugun, "Diğer", aciklama, t)
                 else:
                     self.db.gider_ekle(bugun, "Diğer", aciklama, t)
-                messagebox.showinfo("Başarılı", f"{tur} eklendi: {t:,.2f} ₺")
+                messagebox.showinfo("Başarılı", f"{tur} eklendi: {para_formatla(t)}")
                 pencere.destroy()
                 self.yenile()
             except ValueError:
