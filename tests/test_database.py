@@ -373,6 +373,51 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(self.db._tutar_parse("1500"), 1500.0)
         self.assertEqual(self.db._tutar_parse("1,234.56"), 1234.56)
 
+    def test_geri_yukle_gecersiz_dosya_reddeder(self):
+        """Geri yükleme SQLite olmayan dosyayı reddetmeli (#5)."""
+        kotu = Path(self.temp_dir.name) / "kotu.db"
+        kotu.write_text("bu bir sqlite dosyası değil", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.db.geri_yukle(str(kotu))
+        # Orijinal veri korunmalı — bağlantı hâlâ çalışıyor olmalı
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Sağlam", 100)
+        self.assertEqual(len(self.db.tum_islemler()), 1)
+
+    def test_geri_yukle_gecerli_yedek(self):
+        """Geçerli yedek geri yüklenebilmeli ve veriyi getirmeli (#5)."""
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Yedek verisi", 999)
+        yedek = Path(self.temp_dir.name) / "gecerli.db"
+        self.db.yedekle(str(yedek))
+        self.db.sil(1)
+        self.assertEqual(len(self.db.tum_islemler()), 0)
+        self.db.geri_yukle(str(yedek))
+        self.assertEqual(len(self.db.tum_islemler()), 1)
+
+    def test_like_joker_kacis(self):
+        """LIKE aramasında % ve _ joker olarak yorumlanmamalı (#41)."""
+        self.db.gelir_ekle("01.07.2026", "Maaş", "100% bonus", 500)
+        self.db.gelir_ekle("01.07.2026", "Maaş", "normal", 500)
+        # '%' düz metin olarak aranmalı, her şeyi getirmemeli
+        sonuc = self.db.islem_ara("100%")
+        self.assertEqual(len(sonuc), 1)
+        self.assertEqual(sonuc[0][4], "100% bonus")
+
+    def test_migration_user_version(self):
+        """Migration sonrası user_version güncellenmeli (#25)."""
+        v = self.db.conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertGreaterEqual(v, 1)
+
+    def test_index_var(self):
+        """Sık kullanılan kolonlara index eklenmiş olmalı (#26)."""
+        idx = {
+            r[0]
+            for r in self.db.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        }
+        self.assertIn("idx_islemler_tarih", idx)
+        self.assertIn("idx_islemler_tur_tarih", idx)
+
     def test_gunluk_haftalik(self):
         """Günlük ve haftalık filtre testi."""
         from datetime import date

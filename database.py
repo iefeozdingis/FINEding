@@ -75,13 +75,87 @@ def normalize_date(tarih_str: str) -> str:
         raise ValueError(f"Geçersiz tarih formatı: {tarih_str}") from e
 
 
+# Şema sürümü — her artışta _migrate() ilgili adımı uygular
+SCHEMA_VERSION = 1
+
+
 class Database:
     def __init__(self) -> None:
-        self.conn = sqlite3.connect(DB_PATH)
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn = self._baglan()
         self.cursor = self.conn.cursor()
         self._son_silinen: Optional[Tuple[Any, ...]] = None
         self.create_tables()
+        self._migrate()
+        self._index_olustur()
+
+    @staticmethod
+    def _baglan() -> sqlite3.Connection:
+        """Ortak bağlantı ayarlarıyla SQLite bağlantısı açar.
+
+        busy_timeout: arka plan thread'leri (tekrarlayan/borç kontrolü) ve UI
+        aynı anda yazınca 'database is locked' hatası yerine kısa süre bekler.
+        """
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    def _migrate(self) -> None:
+        """PRAGMA user_version tabanlı numaralı şema migrasyonu.
+
+        'dene-yut' ALTER TABLE yerine sürüm numarasıyla ilerleyen, gerçek
+        hataları yutmayan bir yol. Mevcut normalize edilmemiş borç
+        tarihlerini de ISO'ya çevirir.
+        """
+        mevcut = self.conn.execute("PRAGMA user_version").fetchone()[0]
+        if mevcut < 1:
+            self._migrate_borc_tarihleri()
+            self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            self.conn.commit()
+
+    def _migrate_borc_tarihleri(self) -> None:
+        """Eski GG.AA.YYYY borç tarihlerini ISO YYYY-MM-DD'ye çevirir."""
+        self.cursor.execute(
+            "SELECT id, baslangic_tarih, vade_tarih FROM borclar"
+        )
+        for bid, bas, vade in self.cursor.fetchall():
+            yeni_bas = self._iso_veya_ayni(bas)
+            yeni_vade = self._iso_veya_ayni(vade)
+            if yeni_bas != bas or yeni_vade != vade:
+                self.conn.execute(
+                    "UPDATE borclar SET baslangic_tarih=?, vade_tarih=? WHERE id=?",
+                    (yeni_bas, yeni_vade, bid),
+                )
+
+    @staticmethod
+    def _iso_veya_ayni(tarih: Any) -> Any:
+        """GG.AA.YYYY ise ISO'ya çevirir, aksi halde olduğu gibi bırakır."""
+        if not tarih or not isinstance(tarih, str) or "." not in tarih:
+            return tarih
+        try:
+            return normalize_date(tarih)
+        except ValueError:
+            return tarih
+
+    def _index_olustur(self) -> None:
+        """Sık kullanılan filtre kolonlarına index ekler (yoksa)."""
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_islemler_tarih ON islemler(tarih)"
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_islemler_tur_tarih "
+            "ON islemler(tur, tarih)"
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_islemler_kategori "
+            "ON islemler(kategori)"
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_borclar_vade "
+            "ON borclar(durum, vade_tarih)"
+        )
+        self.conn.commit()
 
     # ==========================
     # Tablolar
@@ -226,12 +300,12 @@ class Database:
     # ==========================
 
     def _log_islem(self, islem_turu: str, islem_id: Any = None, detay: str = "") -> None:
-        """Veritabanı işlemlerini log'a kaydeder."""
+        """İşlemi audit log'a yazar (commit ETMEZ — çağıranın transaction'ına
+        dahildir; böylece kayıt + log atomik olur)."""
         self.cursor.execute(
             "INSERT INTO islem_log (islem_turu, islem_id, detay) VALUES (?,?,?)",
             (islem_turu, islem_id, detay),
         )
-        self.conn.commit()
 
     # ==========================
     # GELİR EKLE
@@ -252,9 +326,8 @@ class Database:
         """,
             (tarih_iso, "Gelir", kategori, aciklama, para_yuvarla(tutar), etiketler),
         )
-
-        self.conn.commit()
         self._log_islem("gelir_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
+        self.conn.commit()
 
     # ==========================
     # GİDER EKLE
@@ -275,9 +348,8 @@ class Database:
         """,
             (tarih_iso, "Gider", kategori, aciklama, para_yuvarla(tutar), etiketler),
         )
-
-        self.conn.commit()
         self._log_islem("gider_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
+        self.conn.commit()
 
     # ==========================
     # TÜM İŞLEMLER
@@ -305,10 +377,13 @@ class Database:
         params: List[Any] = []
         if arama:
             sorgu += (
-                " AND (kategori LIKE ? OR aciklama LIKE ? OR CAST(tutar AS TEXT) LIKE ?"
-                " OR etiketler LIKE ?)"
+                " AND (kategori LIKE ? ESCAPE '\\' OR aciklama LIKE ? ESCAPE '\\'"
+                " OR CAST(tutar AS TEXT) LIKE ? ESCAPE '\\'"
+                " OR etiketler LIKE ? ESCAPE '\\')"
             )
-            like = f"%{arama}%"
+            # Kullanıcının yazdığı % ve _ joker karakter olarak yorumlanmasın
+            kacisli = arama.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            like = f"%{kacisli}%"
             params.extend([like, like, like, like])
         if tur:
             sorgu += " AND tur=?"
@@ -347,8 +422,8 @@ class Database:
             """,
                 (tarih_iso, tur, kategori, aciklama, tutar, etiketler, id),
             )
-        self.conn.commit()
         self._log_islem("guncelle", id, f"{kategori}: {tutar}")
+        self.conn.commit()
 
     def islemler_aralik(self, baslangic: str, bitis: str) -> List[Tuple[Any, ...]]:
         bas_iso = normalize_date(baslangic)
@@ -626,7 +701,7 @@ class Database:
             cf.write(h.hexdigest())
 
     def geri_yukle(self, kaynak_yol: str) -> None:
-        # verify checksum if present
+        # Bütünlük kontrolü (varsa)
         checksum_path = str(kaynak_yol) + ".sha256"
         if Path(checksum_path).exists():
             h = hashlib.sha256()
@@ -638,10 +713,43 @@ class Database:
             if h.hexdigest() != expected:
                 raise ValueError("Yedek bütünlük kontrolü başarısız.")
 
-        shutil.copy2(kaynak_yol, DB_PATH)
+        # Dosyanın gerçekten bir SQLite veritabanı olduğunu doğrula —
+        # bozuk/yabancı bir dosya tüm veriyi (kullanıcı tablosu dahil) yok eder.
+        with open(kaynak_yol, "rb") as f:
+            if f.read(16) != b"SQLite format 3\x00":
+                raise ValueError("Seçilen dosya geçerli bir yedek değil.")
+        gecici = sqlite3.connect(kaynak_yol)
+        try:
+            if gecici.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise ValueError("Yedek dosyası bozuk (integrity_check).")
+        finally:
+            gecici.close()
+
+        # Mevcut veritabanını üzerine yazmadan önce güvenlik yedeği al
+        try:
+            self.conn.commit()
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
         self.conn.close()
-        self.conn = sqlite3.connect(DB_PATH)
-        self.conn.execute("PRAGMA journal_mode=WAL")
+
+        # Eski WAL/SHM dosyaları geri yüklenen DB'nin üzerine 'replay'
+        # edilip sessiz bozulmaya yol açabilir — kopyalamadan önce silinir.
+        for ek in ("-wal", "-shm"):
+            yan = Path(str(DB_PATH) + ek)
+            if yan.exists():
+                try:
+                    yan.unlink()
+                except OSError:
+                    pass
+        if Path(DB_PATH).exists():
+            try:
+                shutil.copy2(DB_PATH, str(DB_PATH) + ".restore-bak")
+            except OSError:
+                pass
+
+        shutil.copy2(kaynak_yol, DB_PATH)
+        self.conn = self._baglan()
         self.cursor = self.conn.cursor()
         self._son_silinen = None
 
@@ -700,13 +808,13 @@ class Database:
     # İŞLEM SİL
     # ==========================
 
-    def sil(self, id: int) -> None:
+    def sil(self, islem_id: int) -> None:
         # Silmeden önce kaydı sakla (geri almak için)
-        self.cursor.execute("SELECT * FROM islemler WHERE id=?", (id,))
+        self.cursor.execute("SELECT * FROM islemler WHERE id=?", (islem_id,))
         self._son_silinen = self.cursor.fetchone()
-        self.cursor.execute("DELETE FROM islemler WHERE id=?", (id,))
+        self.cursor.execute("DELETE FROM islemler WHERE id=?", (islem_id,))
+        self._log_islem("sil", islem_id, "İşlem silindi")
         self.conn.commit()
-        self._log_islem("sil", id, "İşlem silindi")
 
     def geri_al(self) -> bool:
         """Son silinen işlemi geri getirir. Başarılıysa True döner."""
