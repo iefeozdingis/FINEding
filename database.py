@@ -5,6 +5,7 @@ import logging
 import secrets
 import shutil
 import sqlite3
+import sys
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -20,10 +21,25 @@ from ui.money import para_parse
 # Veritabanı Ayarları
 # ==========================
 
-# Yol uygulama köküne (__file__) sabit — çalışma dizinine (CWD) göreli
-# olması, kısayoldan/PyInstaller'dan farklı dizinde başlatınca boş yeni bir
-# veritabanı oluşturup kullanıcıya "verim silindi" izlenimi veriyordu.
-DB_FOLDER = Path(__file__).resolve().parent / "database"
+
+def _uygulama_kok() -> Path:
+    """Kalıcı veri dizininin kökünü döner.
+
+    PyInstaller onefile paketinde __file__, çalıştırma anında açılan geçici
+    _MEIxxxx klasörünü gösterir. O klasör her çalıştırmada YENİDEN oluşur ve
+    çıkışta silinir; bu yüzden veritabanı oraya yazıldığında kullanıcının
+    girdiği HER ŞEY uygulama kapanınca kayboluyor, her açılışta boş bir
+    veritabanı geliyordu. Paketlenmiş uygulamada yol exe'nin yanına
+    (sys.executable) sabitlenir.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    # Kaynaktan çalışırken: modül dizini. CWD'ye göreli olmamalı — kısayoldan
+    # farklı dizinde başlatınca boş yeni bir veritabanı oluşturuyordu.
+    return Path(__file__).resolve().parent
+
+
+DB_FOLDER = _uygulama_kok() / "database"
 DB_FOLDER.mkdir(exist_ok=True)
 
 DB_PATH = DB_FOLDER / "finans.db"

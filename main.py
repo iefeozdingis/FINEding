@@ -8,7 +8,7 @@ from pathlib import Path
 import customtkinter as ctk
 from PIL import Image as PILImage
 
-from database import Database
+from database import Database, _uygulama_kok
 from ui.money import para_formatla
 from ui.ayarlar import AyarlarSayfasi
 from ui.bakiye_widget import BakiyeWidget
@@ -22,8 +22,10 @@ from ui.grafikler import GrafiklerSayfasi
 from ui.hakkinda import HakkindaSayfasi
 from ui.planlama import PlanlamaSayfasi
 
-# Loglama
-log_dir = Path(__file__).parent / "logs"
+# Loglama — KALICI dizine yazılır. Paketlenmiş uygulamada __file__ geçici
+# _MEIxxxx klasörünü gösterdiği için loglar uygulama kapanınca siliniyordu
+# (çökme raporu tam da en çok gerektiği anda kayboluyordu).
+log_dir = _uygulama_kok() / "logs"
 log_dir.mkdir(exist_ok=True)
 
 # Crash log handler
@@ -99,7 +101,7 @@ def _tray_olustur(app):
     if not HAS_TRAY:
         return
 
-    icon_path = Path(__file__).parent / "assets" / "app_icon.ico"
+    icon_path = Path(_asset_path("assets/app_icon.ico"))
     if icon_path.exists():
         image = PILImage.open(icon_path)
     else:
@@ -138,7 +140,7 @@ class FinedingApp(ctk.CTk):
         self.tray_icon = None
 
         # İkon
-        icon_path = Path(__file__).parent / "assets" / "app_icon.ico"
+        icon_path = Path(_asset_path("assets/app_icon.ico"))
         if icon_path.exists():
             try:
                 self.iconbitmap(str(icon_path))
@@ -190,7 +192,7 @@ class FinedingApp(ctk.CTk):
         logo_frame = ctk.CTkFrame(self.menu, fg_color="transparent")
         logo_frame.pack(pady=(25, 20), fill="x")
 
-        icon_path = Path(__file__).parent / "assets" / "app_icon.ico"
+        icon_path = Path(_asset_path("assets/app_icon.ico"))
         if icon_path.exists():
             self.logo_img = ctk.CTkImage(
                 light_image=PILImage.open(icon_path),
@@ -560,7 +562,7 @@ class FinedingApp(ctk.CTk):
         # köküne sabit (farklı CWD'den başlatınca yedek kaybını önler)
         try:
             from datetime import datetime
-            yedek_dir = Path(__file__).parent / "backups"
+            yedek_dir = _uygulama_kok() / "backups"
             yedek_dir.mkdir(exist_ok=True)
             yedek_adi = str(
                 yedek_dir / f"oto_yedek_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
