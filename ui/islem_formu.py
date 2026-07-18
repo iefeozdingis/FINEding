@@ -11,7 +11,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from ui import tema
-from ui.utils import tarih_bind, tutar_bind, tutar_oku
+from ui.utils import kategori_listesi, tarih_bind, tutar_bind, tutar_oku
 
 
 class IslemFormuSayfasi(ctk.CTkFrame):
@@ -98,10 +98,8 @@ class IslemFormuSayfasi(ctk.CTkFrame):
             w.bind("<Return>", lambda e: self.kaydet())
 
     def _kategori_listesi(self) -> list:
-        ozel = self.db.kategorileri_getir(self.tur)
-        return self.varsayilan_kategoriler + [
-            k for k in ozel if k not in self.varsayilan_kategoriler
-        ]
+        # Birleştirme mantığı ui.utils.kategori_listesi'nde tek yerde
+        return kategori_listesi(self.db, self.tur)
 
     def kaydet(self):
         try:

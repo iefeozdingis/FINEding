@@ -4,6 +4,7 @@ from typing import Any, Callable, Optional
 import customtkinter as ctk  # type: ignore
 
 from ui import tema
+from ui.utils import modal_yap
 
 
 class AyarlarSayfasi(ctk.CTkFrame):
@@ -292,11 +293,7 @@ class SifreDegistirPenceresi(ctk.CTkToplevel):
         self.resizable(False, False)
 
         # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         ctk.CTkLabel(
             self, text="🔒 Şifre Değiştir", font=("Segoe UI", 20, "bold")
@@ -380,11 +377,7 @@ class ProfilDuzenlePenceresi(ctk.CTkToplevel):
         self.geometry("380x260")
         self.resizable(False, False)
 
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         ctk.CTkLabel(
             self, text="👤 Profil Düzenle", font=("Segoe UI", 20, "bold")

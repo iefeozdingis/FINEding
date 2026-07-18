@@ -7,6 +7,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from database import MIN_SIFRE_UZUNLUK
+from ui.utils import modal_yap
 from version import SURUM_ETIKETI
 
 
@@ -225,11 +226,7 @@ class KayitPenceresi(ctk.CTkToplevel):
         self.resizable(False, False)
 
         # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         ctk.CTkLabel(self, text="📝 Yeni Hesap", font=("Segoe UI", 22, "bold")).pack(
             pady=20

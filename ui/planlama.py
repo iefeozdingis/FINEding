@@ -7,6 +7,7 @@ import customtkinter as ctk
 
 from ui import tema
 from ui.utils import (
+    modal_yap,
     para_formatla,
     para_parse,
     tarih_bind,
@@ -850,10 +851,7 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         pencere = ctk.CTkToplevel(self)
         pencere.title("Katkı Ekle")
         pencere.geometry("300x180")
-        pencere.transient(self.winfo_toplevel())
-        pencere.grab_set()
-        pencere.lift()
-        pencere.focus_force()
+        modal_yap(pencere, self)
 
         ctk.CTkLabel(
             pencere, text=f"🎯 {hedef['ad']}", font=("Segoe UI", 16, "bold")
@@ -904,11 +902,7 @@ class Pencere(ctk.CTkToplevel):
         self._extra = extra or {}
 
         # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         ctk.CTkLabel(self, text=baslik, font=("Segoe UI", 20, "bold")).pack(pady=16)
 
@@ -957,11 +951,7 @@ class BorcPenceresi(ctk.CTkToplevel):
         self._kaydet_cb = kaydet_cb
 
         # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         ctk.CTkLabel(self, text=baslik, font=("Segoe UI", 20, "bold")).pack(pady=16)
 
@@ -1032,11 +1022,7 @@ class BorcOdemePenceresi(ctk.CTkToplevel):
         self.geometry("380x340")
         self.resizable(False, False)
 
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         borclar = db.borclari_listele("Aktif") + db.borclari_listele("Ödendi")
         mevcut = next((b for b in borclar if b["id"] == borc_id), None)
@@ -1122,11 +1108,7 @@ class BorcDuzenlePenceresi(ctk.CTkToplevel):
         self._yenile_cb = yenile_cb
 
         # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         # Mevcut değerleri bul
         borclar = db.borclari_listele("Aktif") + db.borclari_listele("Ödendi")

@@ -5,6 +5,8 @@ import customtkinter as ctk
 from database import csv_guvenli, normalize_date
 from ui import tema
 from ui.utils import (
+    kategori_listesi,
+    modal_yap,
     para_formatla,
     tarih_bind,
     treeview_tema_uygula,
@@ -23,11 +25,7 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         self.resizable(False, False)
 
         # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        modal_yap(self, parent)
 
         ctk.CTkLabel(self, text="İşlem Düzenle", font=("Segoe UI", 22, "bold")).pack(
             pady=16
@@ -84,22 +82,9 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         )
 
     def _kategoriler(self, tur=None):
-        from ui.gelir import VARSAYILAN_GELIR_KATEGORILER
-        from ui.gider import VARSAYILAN_GIDER_KATEGORILER
-
         if tur is None:
             tur = self.tur.get()
-        if tur == "Gelir":
-            ozel = self.db.kategorileri_getir("Gelir")
-            kategoriler = VARSAYILAN_GELIR_KATEGORILER + [
-                k for k in ozel if k not in VARSAYILAN_GELIR_KATEGORILER
-            ]
-        else:
-            ozel = self.db.kategorileri_getir("Gider")
-            kategoriler = VARSAYILAN_GIDER_KATEGORILER + [
-                k for k in ozel if k not in VARSAYILAN_GIDER_KATEGORILER
-            ]
-        return kategoriler
+        return kategori_listesi(self.db, tur)
 
     def _tur_degisti(self, secim):
         self.kategori.configure(values=self._kategoriler(secim))
@@ -838,10 +823,7 @@ class Dashboard(ctk.CTkFrame):
         pencere.title(f"Hızlı {tur} Ekle")
         pencere.geometry("380x340")
         pencere.resizable(False, False)
-        pencere.transient(self.winfo_toplevel())
-        pencere.grab_set()
-        pencere.lift()
-        pencere.focus_force()
+        modal_yap(pencere, self)
 
         ctk.CTkLabel(
             pencere,
@@ -857,18 +839,7 @@ class Dashboard(ctk.CTkFrame):
         # Kategori seçimi — önceden sessizce "Diğer"e sabitleniyor, bu da
         # bütçe çubukları ve kategori grafikleriyle çelişen kirli veri
         # üretiyordu. Artık kullanıcı kategori seçebilir.
-        from ui.gelir import VARSAYILAN_GELIR_KATEGORILER
-        from ui.gider import VARSAYILAN_GIDER_KATEGORILER
-        if tur == "Gelir":
-            kat_liste = VARSAYILAN_GELIR_KATEGORILER + [
-                k for k in self.db.kategorileri_getir("Gelir")
-                if k not in VARSAYILAN_GELIR_KATEGORILER
-            ]
-        else:
-            kat_liste = VARSAYILAN_GIDER_KATEGORILER + [
-                k for k in self.db.kategorileri_getir("Gider")
-                if k not in VARSAYILAN_GIDER_KATEGORILER
-            ]
+        kat_liste = kategori_listesi(self.db, tur)
         kategori_combo = ctk.CTkComboBox(
             pencere, width=280, values=kat_liste, font=("Segoe UI", 13)
         )

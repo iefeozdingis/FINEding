@@ -78,6 +78,38 @@ def treeview_tema_uygula():
     )
 
 
+def modal_yap(pencere, parent) -> None:
+    """Toplevel'i modal hale getirir (arkaya kaçmaz, ana pencere tıklanamaz).
+
+    Bu blok 10 ayrı pencerede birebir kopyalanmıştı; modal davranışındaki
+    bir düzeltmenin hepsinde elle tekrarlanması gerekiyordu ve biri
+    unutulunca davranış sapıyordu.
+    """
+    pencere.transient(parent.winfo_toplevel())
+    pencere.grab_set()
+    pencere.lift()
+    pencere.focus_force()
+    pencere.protocol("WM_DELETE_WINDOW", pencere.destroy)
+
+
+def kategori_listesi(db, tur: str) -> list:
+    """Varsayılan + kullanıcının özel kategorilerini (tekrarsız) döner.
+
+    Aynı birleştirme mantığı üç ayrı yerde kopyalanmıştı (islem_formu,
+    dashboard._kategoriler, dashboard._hizli_islem); kural değişince biri
+    unutulursa formlar arası tutarsız kategori listeleri oluşuyordu.
+    """
+    from ui.gelir import VARSAYILAN_GELIR_KATEGORILER
+    from ui.gider import VARSAYILAN_GIDER_KATEGORILER
+
+    varsayilan = (
+        VARSAYILAN_GELIR_KATEGORILER if tur == "Gelir"
+        else VARSAYILAN_GIDER_KATEGORILER
+    )
+    ozel = db.kategorileri_getir(tur)
+    return list(varsayilan) + [k for k in ozel if k not in varsayilan]
+
+
 def tarih_bicimle(rakamlar: str) -> str:
     """Yalnızca rakamlardan oluşan metni GG.AA.YYYY biçimine sokar.
 
