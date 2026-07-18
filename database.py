@@ -123,7 +123,7 @@ def normalize_date(tarih_str: str) -> str:
 
 
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Minimum şifre uzunluğu (veri katmanında zorlanır)
 MIN_SIFRE_UZUNLUK = 8
@@ -204,6 +204,8 @@ class Database:
             self._migrate_borc_tarihleri()
         if mevcut < 2:
             self._migrate_kullanici_id()
+        if mevcut < 3:
+            self._migrate_giris_denemeleri()
         if mevcut < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.conn.commit()
@@ -228,6 +230,38 @@ class Database:
                     f"UPDATE {tablo} SET kullanici_id=1 WHERE kullanici_id IS NULL"
                 )
         self._migrate_butce_kullanici()
+        self.conn.commit()
+
+    def _migrate_giris_denemeleri(self) -> None:
+        """v3: eksik kolonları eski veritabanlarına ekler.
+
+        - kullanicilar.basarisiz_deneme / son_basarisiz: kaba kuvvet sayacı
+          artık kalıcı. Önceden yalnızca giriş penceresinin bellek alanındaydı;
+          pencereyi kapatıp açmak gecikmeyi sıfırlıyordu.
+        - etiketler / aktarim_tarihi / son_islenen_donem: bu kolonlar önceden
+          create_tables içinde 'dene-yut' ALTER ile ekleniyordu. Şema artık
+          create_tables'ta eksiksiz tanımlı; eski DB'ler buradan yükseltilir.
+        """
+        eklenecek = [
+            ("kullanicilar", "basarisiz_deneme", "INTEGER DEFAULT 0"),
+            ("kullanicilar", "son_basarisiz", "TEXT"),
+            ("islemler", "etiketler", "TEXT DEFAULT ''"),
+            ("planlanan", "aktarim_tarihi", "TEXT DEFAULT ''"),
+            ("tekrarlayan", "son_islenen_donem", "TEXT DEFAULT ''"),
+        ]
+        for tablo, kolon, tip in eklenecek:
+            mevcut = {
+                r[1]
+                for r in self.conn.execute(
+                    f"PRAGMA table_info({tablo})"
+                ).fetchall()
+            }
+            if not mevcut:
+                continue  # tablo yok (yeni kurulum) — create_tables halleder
+            if kolon not in mevcut:
+                self.conn.execute(
+                    f"ALTER TABLE {tablo} ADD COLUMN {kolon} {tip}"
+                )
         self.conn.commit()
 
     def _migrate_butce_kullanici(self) -> None:
@@ -310,28 +344,26 @@ class Database:
     # ==========================
 
     def create_tables(self) -> None:
+        """GÜNCEL şemayı kurar (yalnızca CREATE TABLE IF NOT EXISTS).
+
+        Kolon eklemeleri buraya DEĞİL, numaralı migrasyona aittir. Önceden
+        şema ikiye bölünmüştü: create_tables tabloları kullanici_id olmadan
+        kuruyor, kolon yalnızca _migrate'ten geliyordu. Bu yüzden migrasyon
+        atlanan/kesilen bir kurulumda tüm sorgular 'no such column' ile
+        patlıyordu ve şemayı okuyan geliştirici eksik bir tablo görüyordu.
+        """
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS islemler(
-
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-
             tarih TEXT NOT NULL,
-
             tur TEXT NOT NULL,
-
             kategori TEXT NOT NULL,
-
             aciklama TEXT,
-
-            tutar REAL NOT NULL
-
+            tutar REAL NOT NULL,
+            etiketler TEXT DEFAULT '',
+            kullanici_id INTEGER DEFAULT 1
         )
         """)
-        # Etiket sütunu (önceden yoksa ekle)
-        try:
-            self.cursor.execute("ALTER TABLE islemler ADD COLUMN etiketler TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass  # Zaten varsa geç
 
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS butceler(
@@ -360,16 +392,11 @@ class Database:
             kategori TEXT NOT NULL,
             tur TEXT NOT NULL,
             aciklama TEXT,
-            tutar REAL NOT NULL
+            tutar REAL NOT NULL,
+            aktarim_tarihi TEXT DEFAULT '',
+            kullanici_id INTEGER DEFAULT 1
         )
         """)
-        # Aktarım tarihi (mükerrer aktarımı önlemek için, önceden yoksa ekle)
-        try:
-            self.cursor.execute(
-                "ALTER TABLE planlanan ADD COLUMN aktarim_tarihi TEXT DEFAULT ''"
-            )
-        except sqlite3.OperationalError:
-            pass
 
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS borclar(
@@ -381,7 +408,8 @@ class Database:
             kalan_tutar REAL NOT NULL,
             baslangic_tarih TEXT,
             vade_tarih TEXT,
-            durum TEXT NOT NULL DEFAULT 'Aktif'
+            durum TEXT NOT NULL DEFAULT 'Aktif',
+            kullanici_id INTEGER DEFAULT 1
         )
         """)
 
@@ -391,7 +419,9 @@ class Database:
             kullanici_adi TEXT UNIQUE NOT NULL,
             sifre_hash TEXT NOT NULL,
             ad_soyad TEXT,
-            olusturma_tarihi TEXT NOT NULL
+            olusturma_tarihi TEXT NOT NULL,
+            basarisiz_deneme INTEGER DEFAULT 0,
+            son_basarisiz TEXT
         )
         """)
 
@@ -404,17 +434,11 @@ class Database:
             aciklama TEXT,
             tutar REAL NOT NULL,
             gun INTEGER NOT NULL,
-            aktif INTEGER NOT NULL DEFAULT 1
+            aktif INTEGER NOT NULL DEFAULT 1,
+            son_islenen_donem TEXT DEFAULT '',
+            kullanici_id INTEGER DEFAULT 1
         )
         """)
-        # Son işlenen dönem (YYYY-MM) — kaçan ayların telafisi ve mükerrer
-        # eklemeyi önlemek için içerik eşleştirme yerine bu alan kullanılır
-        try:
-            self.cursor.execute(
-                "ALTER TABLE tekrarlayan ADD COLUMN son_islenen_donem TEXT DEFAULT ''"
-            )
-        except sqlite3.OperationalError:
-            pass
 
         # İşlem geçmişi (audit log)
         self.cursor.execute("""
@@ -444,7 +468,8 @@ class Database:
             ad TEXT NOT NULL,
             hedef_tutar REAL NOT NULL,
             biriken_tutar REAL NOT NULL DEFAULT 0,
-            hedef_tarih TEXT
+            hedef_tarih TEXT,
+            kullanici_id INTEGER DEFAULT 1
         )
         """)
 
@@ -1354,14 +1379,26 @@ class Database:
     def kullanici_dogrula(
         self, kullanici_adi: str, sifre: str
     ) -> Optional[Dict[str, Any]]:
-        """Kullanıcı girişi doğrular, başarılıysa kullanıcı bilgilerini döner."""
+        """Kullanıcı girişi doğrular, başarılıysa kullanıcı bilgilerini döner.
+
+        Başarısız deneme sayacı veritabanında tutulur; giris_kilit_saniyesi()
+        ile birlikte pencere kapatıp açarak sıfırlanamayan bir gecikme sağlar.
+        """
         self.cursor.execute(
             "SELECT id, kullanici_adi, ad_soyad, sifre_hash FROM kullanicilar "
             "WHERE kullanici_adi=?",
             (kullanici_adi,),
         )
         row = self.cursor.fetchone()
+        if row is not None and not _sifre_dogrula(sifre, row[3]):
+            self._basarisiz_deneme_kaydet(row[0])
         if row and _sifre_dogrula(sifre, row[3]):
+            self.cursor.execute(
+                "UPDATE kullanicilar SET basarisiz_deneme=0, son_basarisiz=NULL "
+                "WHERE id=?",
+                (row[0],),
+            )
+            self.conn.commit()
             # Upgrade-on-login: eski (bcrypt öncesi) SHA-256 hash başarıyla
             # doğrulandıysa bcrypt'e yükselt; böylece zayıf hash kalıcı olmaz.
             if _HAS_BCRYPT and not str(row[3]).startswith("$2"):
@@ -1377,6 +1414,41 @@ class Database:
                     )
             return {"id": row[0], "kullanici_adi": row[1], "ad_soyad": row[2]}
         return None
+
+    def _basarisiz_deneme_kaydet(self, kullanici_id: int) -> None:
+        """Başarısız denemeyi kalıcı olarak sayar ve zaman damgasını yeniler."""
+        self.cursor.execute(
+            "UPDATE kullanicilar SET basarisiz_deneme=COALESCE(basarisiz_deneme,0)+1, "
+            "son_basarisiz=? WHERE id=?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), kullanici_id),
+        )
+        self.conn.commit()
+
+    def giris_kilit_saniyesi(self, kullanici_adi: str) -> int:
+        """Bu kullanıcı için kalan kilit süresini saniye olarak döner (0 = serbest).
+
+        5 başarısız denemeden sonra üstel gecikme (2^(n-4), en fazla 30 sn)
+        uygulanır. Sayaç DB'de tutulduğu için giriş penceresini kapatıp açmak
+        ya da uygulamayı yeniden başlatmak gecikmeyi sıfırlamaz.
+        """
+        self.cursor.execute(
+            "SELECT COALESCE(basarisiz_deneme,0), son_basarisiz FROM kullanicilar "
+            "WHERE kullanici_adi=?",
+            (kullanici_adi,),
+        )
+        row = self.cursor.fetchone()
+        if not row:
+            return 0
+        deneme, son = int(row[0]), row[1]
+        if deneme < 5 or not son:
+            return 0
+        try:
+            son_dt = datetime.strptime(son, "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            return 0
+        bekleme = min(2 ** (deneme - 4), 30)
+        gecen = (datetime.now() - son_dt).total_seconds()
+        return max(0, int(bekleme - gecen) + (1 if bekleme > gecen else 0))
 
     def kullanici_kaydet(self, kullanici_adi: str, sifre: str, ad_soyad: str) -> bool:
         """Yeni kullanıcı kaydeder. Başarılıysa True.

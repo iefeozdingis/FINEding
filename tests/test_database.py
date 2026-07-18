@@ -239,6 +239,100 @@ class DatabaseTests(unittest.TestCase):
 
         self.assertEqual(len(self.db.tum_islemler()), onceki)
 
+    def test_giris_kilidi_kalici(self):
+        """Başarısız deneme sayacı DB'de tutulmalı, örnek değişkeninde değil."""
+        self.db.kullanici_kaydet("ayse", "dogrusifre", "Ayşe")
+        self.assertEqual(self.db.giris_kilit_saniyesi("ayse"), 0)
+
+        for _ in range(5):
+            self.assertIsNone(self.db.kullanici_dogrula("ayse", "yanlis"))
+
+        # 5. denemeden sonra kilit devrede
+        self.assertGreater(self.db.giris_kilit_saniyesi("ayse"), 0)
+
+        # Yeni bir Database örneği (uygulama yeniden başlatıldı) sıfırlamamalı
+        yeni = db_module.Database()
+        try:
+            self.assertGreater(yeni.giris_kilit_saniyesi("ayse"), 0)
+        finally:
+            yeni.close()
+
+    def test_basarili_giris_sayaci_sifirlar(self):
+        """Doğru şifreyle giriş kilidi kaldırmalı."""
+        self.db.kullanici_kaydet("ayse", "dogrusifre", "Ayşe")
+        for _ in range(3):
+            self.db.kullanici_dogrula("ayse", "yanlis")
+
+        self.assertIsNotNone(self.db.kullanici_dogrula("ayse", "dogrusifre"))
+        self.db.cursor.execute(
+            "SELECT basarisiz_deneme FROM kullanicilar WHERE kullanici_adi=?",
+            ("ayse",),
+        )
+        self.assertEqual(self.db.cursor.fetchone()[0], 0)
+
+    def test_eski_semadan_migrasyon(self):
+        """v0 şemalı bir DB veri kaybetmeden güncel şemaya yükseltilmeli."""
+        import sqlite3
+        eski_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(eski_dir.cleanup)
+        eski_yol = Path(eski_dir.name) / "eski.db"
+
+        c = sqlite3.connect(eski_yol)
+        c.executescript("""
+        CREATE TABLE islemler(id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tarih TEXT NOT NULL, tur TEXT NOT NULL, kategori TEXT NOT NULL,
+          aciklama TEXT, tutar REAL NOT NULL);
+        CREATE TABLE butceler(id INTEGER PRIMARY KEY AUTOINCREMENT, ay INTEGER,
+          yil INTEGER, kategori TEXT, tutar REAL, UNIQUE(ay,yil,kategori));
+        CREATE TABLE planlanan(id INTEGER PRIMARY KEY AUTOINCREMENT, ay INTEGER,
+          yil INTEGER, kategori TEXT, tur TEXT, aciklama TEXT, tutar REAL);
+        CREATE TABLE borclar(id INTEGER PRIMARY KEY AUTOINCREMENT, tur TEXT,
+          aciklama TEXT, kisi TEXT, toplam_tutar REAL, kalan_tutar REAL,
+          baslangic_tarih TEXT, vade_tarih TEXT, durum TEXT DEFAULT 'Aktif');
+        CREATE TABLE tekrarlayan(id INTEGER PRIMARY KEY AUTOINCREMENT, tur TEXT,
+          kategori TEXT, aciklama TEXT, tutar REAL, gun INTEGER,
+          aktif INTEGER DEFAULT 1);
+        CREATE TABLE tasarruf_hedefleri(id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ad TEXT, hedef_tutar REAL, biriken_tutar REAL DEFAULT 0,
+          hedef_tarih TEXT);
+        CREATE TABLE kullanicilar(id INTEGER PRIMARY KEY AUTOINCREMENT,
+          kullanici_adi TEXT UNIQUE NOT NULL, sifre_hash TEXT NOT NULL,
+          ad_soyad TEXT, olusturma_tarihi TEXT NOT NULL);
+        INSERT INTO islemler (tarih,tur,kategori,aciklama,tutar)
+          VALUES ('2026-01-15','Gelir','Maaş','Ocak maaşı',45000.0);
+        INSERT INTO islemler (tarih,tur,kategori,aciklama,tutar)
+          VALUES ('2026-01-20','Gider','Market','Alışveriş',1250.50);
+        INSERT INTO kullanicilar (kullanici_adi,sifre_hash,ad_soyad,olusturma_tarihi)
+          VALUES ('mevcut','x','Mevcut','2026-01-01');
+        PRAGMA user_version=0;
+        """)
+        c.commit()
+        c.close()
+
+        db_module.DB_PATH = eski_yol
+        eski_db = db_module.Database()
+        self.addCleanup(eski_db.close)
+
+        self.assertEqual(
+            eski_db.conn.execute("PRAGMA user_version").fetchone()[0],
+            db_module.SCHEMA_VERSION,
+        )
+        for tablo, kolon in (
+            ("islemler", "kullanici_id"), ("islemler", "etiketler"),
+            ("planlanan", "aktarim_tarihi"), ("tekrarlayan", "son_islenen_donem"),
+            ("kullanicilar", "basarisiz_deneme"),
+        ):
+            kolonlar = {
+                r[1] for r in eski_db.conn.execute(f"PRAGMA table_info({tablo})")
+            }
+            self.assertIn(kolon, kolonlar, f"{tablo}.{kolon} eklenmedi")
+
+        # Mevcut veri korunmalı ve admin'e (id=1) atanmalı
+        eski_db.oturum_ac(1)
+        self.assertEqual(len(eski_db.tum_islemler()), 2)
+        self.assertEqual(eski_db.toplam_gelir(), 45000.0)
+        self.assertEqual(eski_db.toplam_gider(), 1250.50)
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)

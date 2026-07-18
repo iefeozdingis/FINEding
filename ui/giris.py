@@ -171,20 +171,22 @@ class GirisEkrani(ctk.CTk):
             messagebox.showwarning("Uyarı", "Kullanıcı adı ve şifre giriniz.")
             return
 
-        # Kaba kuvvete karşı basit gecikme: art arda başarısız denemelerde
-        # bekleme süresi artar (5 denemeden sonra hissedilir yavaşlar).
-        basarisiz = getattr(self, "_basarisiz_deneme", 0)
-        if basarisiz >= 5:
-            import time
-            bekleme = min(2 ** (basarisiz - 4), 30)
-            time.sleep(bekleme)
+        # Kaba kuvvete karşı gecikme. Sayaç veritabanında tutulur (pencereyi
+        # kapatıp açmak sıfırlamaz) ve bekleme time.sleep ile ana thread'i
+        # BLOKLAMAZ — eskiden 30 saniyeye kadar pencere donuyordu.
+        kalan = self.db.giris_kilit_saniyesi(kadi)
+        if kalan > 0:
+            messagebox.showwarning(
+                "Çok fazla deneme",
+                f"Çok fazla hatalı giriş yapıldı.\n"
+                f"Lütfen {kalan} saniye bekleyip tekrar deneyin.",
+            )
+            return
 
         kullanici = self.db.kullanici_dogrula(kadi, sifre)
         if not kullanici:
-            self._basarisiz_deneme = basarisiz + 1
             messagebox.showerror("Hata", "Kullanıcı adı veya şifre hatalı!")
             return
-        self._basarisiz_deneme = 0
 
         # Beni hatırla
         if self.beni_hatirla.get():
