@@ -561,14 +561,29 @@ class Database:
         return row[0] if row else 0
 
     def islem_ara(
-        self, arama: str = "", tur: str = "", limit: Optional[int] = None
+        self, arama: str = "", tur: str = "", limit: Optional[int] = None,
+        donem: str = "",
     ) -> List[Tuple[Any, ...]]:
-        """Belirtilen metin ve türe göre işlemleri filtreleyerek arar.
+        """Metin, tür ve döneme göre işlemleri filtreleyerek arar.
 
         limit verilirse en yeni N kayıt döner (dashboard performansı için).
+        donem: "" (tümü), "bugun" veya "hafta". Üç filtre BİRLİKTE uygulanır;
+        önceden dönem filtresi ayrı bir sorgu yoluydu ve aramayı yok sayıyordu.
         """
         sorgu = "SELECT * FROM islemler WHERE kullanici_id=?"
         params: List[Any] = [self.aktif_kullanici_id]
+        if donem == "bugun":
+            from datetime import date
+            sorgu += " AND tarih=?"
+            params.append(date.today().strftime("%Y-%m-%d"))
+        elif donem == "hafta":
+            from datetime import date, timedelta
+            bugun = date.today()
+            hafta_basi = bugun - timedelta(days=bugun.weekday())
+            sorgu += " AND tarih BETWEEN ? AND ?"
+            params.extend([
+                hafta_basi.strftime("%Y-%m-%d"), bugun.strftime("%Y-%m-%d")
+            ])
         if arama:
             sorgu += (
                 " AND (kategori LIKE ? ESCAPE '\\' OR aciklama LIKE ? ESCAPE '\\'"

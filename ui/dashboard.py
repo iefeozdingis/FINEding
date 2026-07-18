@@ -136,6 +136,10 @@ class Dashboard(ctk.CTkFrame):
 
         self.db = db
         self.grid_columnconfigure((0, 1), weight=1)
+        # Aktif dönem filtresi ("", "bugun", "hafta"). yenile() boyunca
+        # korunur: önceden durum tutulmadığı için bir kayıt düzenlenince
+        # görünüm sessizce "Tümü"ye dönüyordu.
+        self._donem_filtre = ""
 
         self.yenile()
 
@@ -352,7 +356,10 @@ class Dashboard(ctk.CTkFrame):
             arama_frame, placeholder_text="🔍 Kategori, açıklama, etiket veya tutar ara..."
         )
         self.arama_entry.grid(row=0, column=0, sticky="ew", padx=(10, 5), pady=8)
-        self.arama_entry.bind("<Return>", lambda e: self.yenile())
+        # Arama yalnızca TABLOYU tazeler. Tam yenile() 4 kartı, bütçe
+        # çubuklarını ve tüm arama barını yeniden kurup bütün agregasyon
+        # sorgularını yeniden koşuyordu — her Enter'da gözle görülür takılma.
+        self.arama_entry.bind("<Return>", lambda e: self._tabloyu_doldur())
 
         self.ara_btn = ctk.CTkButton(
             arama_frame,
@@ -360,7 +367,7 @@ class Dashboard(ctk.CTkFrame):
             width=70,
             height=32,
             fg_color="#0d9488",
-            command=self.yenile,
+            command=self._tabloyu_doldur,
         )
         self.ara_btn.grid(row=0, column=2, padx=(5, 10), pady=8)
 
@@ -368,7 +375,7 @@ class Dashboard(ctk.CTkFrame):
             arama_frame,
             width=120,
             values=["Tümü", "Gelir", "Gider"],
-            command=lambda _: self.yenile(),
+            command=lambda _: self._tabloyu_doldur(),
         )
         self.tur_filtre.set(tur_secili)
         self.tur_filtre.grid(row=0, column=1, padx=(5, 10), pady=8)
@@ -419,40 +426,12 @@ class Dashboard(ctk.CTkFrame):
 
         self.tablo.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Filtre uygula — en yeni 200 kayıtla sınırla (binlerce işlemde her
-        # arama/filtrede tüm tabloyu çekip Treeview'a basmak donmaya yol açıyordu)
-        tur = "" if tur_secili == "Tümü" else tur_secili
-        satirlar = self.db.islem_ara(arama_metni, tur, limit=200)
-        for satir in satirlar:
-            self.tablo.insert("", "end", values=satir)
+        # Boş durum / "sonuç yok" mesajları bu kapsayıcıya çizilir; tabloyla
+        # birlikte tazelenir (tam sayfa yeniden kurulumu gerekmez)
+        self._durum_kutusu = ctk.CTkFrame(tablo_frame, fg_color="transparent")
+        self._durum_kutusu.pack(fill="x")
 
-        # Boş durum: hiç işlem yoksa (ve arama filtresi de yoksa) kullanıcıyı
-        # ilk işlemini eklemeye yönlendiren bir panel göster
-        if not satirlar and not arama_metni and tur_secili == "Tümü":
-            bos = ctk.CTkFrame(tablo_frame, fg_color="transparent")
-            bos.pack(pady=20)
-            ctk.CTkLabel(
-                bos, text="👋 Henüz işlemin yok",
-                font=("Segoe UI", 16, "bold"), text_color=tema.METIN_TEAL,
-            ).pack(pady=(0, 4))
-            ctk.CTkLabel(
-                bos, text="Başlamak için ilk gelir veya giderini ekle.",
-                font=("Segoe UI", 12), text_color="#94a3b8",
-            ).pack(pady=(0, 10))
-            ctk.CTkButton(
-                bos, text="💰 İlk Gelirini Ekle", width=180, fg_color="#2e8b57",
-                command=self._hizli_gelir,
-            ).pack(pady=3)
-            ctk.CTkButton(
-                bos, text="💸 İlk Giderini Ekle", width=180, fg_color="#c0392b",
-                command=self._hizli_gider,
-            ).pack(pady=3)
-        if len(satirlar) >= 200:
-            ctk.CTkLabel(
-                tablo_frame,
-                text="⏳ En yeni 200 kayıt gösteriliyor — daralt için arama/filtre kullan",
-                font=("Segoe UI", 10), text_color="#94a3b8",
-            ).pack(pady=(0, 4))
+        self._tabloyu_doldur()
 
         buton_frame = ctk.CTkFrame(tablo_frame)
         buton_frame.pack(pady=10)
@@ -937,13 +916,137 @@ class Dashboard(ctk.CTkFrame):
         self._hizli_islem("Gider")
 
     def _filtrele(self, mod):
-        """Bugün/Bu hafta/Tümü filtresi uygular."""
+        """Bugün/Bu hafta/Tümü dönem filtresini seçer."""
+        self._donem_filtre = "" if mod == "tumu" else mod
+        self._tabloyu_doldur()
+
+    # Aktif dönem butonunu vurgulamak için renkler
+    _FILTRE_AKTIF = "#14b8a6"
+    _FILTRE_PASIF = "#475569"
+
+    def _filtre_butonlarini_guncelle(self):
+        """Hangi dönem filtresinin açık olduğunu görünür kılar.
+
+        Önceden üç buton da aynı görünüyordu; kullanıcı haftalık görünümde
+        olduğunu anlayamıyordu.
+        """
+        esleme = {
+            "bugun": getattr(self, "btn_bugun", None),
+            "hafta": getattr(self, "btn_hafta", None),
+            "": getattr(self, "btn_tumu", None),
+        }
+        for mod, btn in esleme.items():
+            if btn is None:
+                continue
+            try:
+                btn.configure(
+                    fg_color=(
+                        self._FILTRE_AKTIF
+                        if mod == self._donem_filtre
+                        else self._FILTRE_PASIF
+                    )
+                )
+            except Exception:
+                pass
+
+    def _tabloyu_doldur(self):
+        """Arama + tür + dönem filtrelerini BİRLİKTE uygulayıp tabloyu doldurur.
+
+        Tek giriş noktası: arama, tür seçimi ve dönem butonları artık aynı
+        yolu kullanıyor. Önceden dönem butonları aramayı yok sayıyor, arama
+        ise tüm sayfayı yeniden kuruyordu.
+        """
+        if not (hasattr(self, "tablo") and self.tablo.winfo_exists()):
+            return
+
+        arama_metni = ""
+        if hasattr(self, "arama_entry") and self.arama_entry.winfo_exists():
+            arama_metni = self.arama_entry.get().strip()
+        tur_secili = "Tümü"
+        if hasattr(self, "tur_filtre") and self.tur_filtre.winfo_exists():
+            tur_secili = self.tur_filtre.get()
+        tur = "" if tur_secili == "Tümü" else tur_secili
+
+        # En yeni 200 kayıtla sınırla (binlerce işlemde tüm tabloyu
+        # Treeview'a basmak donmaya yol açıyordu)
+        satirlar = self.db.islem_ara(
+            arama_metni, tur, limit=200, donem=self._donem_filtre
+        )
+
         self.tablo.delete(*self.tablo.get_children())
-        if mod == "bugun":
-            islemler = self.db.gunluk_islemler()
-        elif mod == "hafta":
-            islemler = self.db.haftalik_islemler()
-        else:
-            islemler = self.db.islem_ara(limit=200)
-        for satir in islemler:
+        for satir in satirlar:
             self.tablo.insert("", "end", values=satir)
+
+        self._filtre_butonlarini_guncelle()
+        self._durum_mesaji_ciz(satirlar, arama_metni, tur_secili)
+
+    def _durum_mesaji_ciz(self, satirlar, arama_metni, tur_secili):
+        """Boş durum / 'sonuç yok' / limit uyarısını çizer."""
+        if not (
+            hasattr(self, "_durum_kutusu") and self._durum_kutusu.winfo_exists()
+        ):
+            return
+        for w in self._durum_kutusu.winfo_children():
+            w.destroy()
+
+        filtre_var = bool(arama_metni) or tur_secili != "Tümü" or self._donem_filtre
+
+        if not satirlar and not filtre_var:
+            # Hiç işlem yok: onboarding paneli
+            bos = ctk.CTkFrame(self._durum_kutusu, fg_color="transparent")
+            bos.pack(pady=20)
+            ctk.CTkLabel(
+                bos, text="👋 Henüz işlemin yok",
+                font=("Segoe UI", 16, "bold"), text_color=tema.METIN_TEAL,
+            ).pack(pady=(0, 4))
+            ctk.CTkLabel(
+                bos, text="Başlamak için ilk gelir veya giderini ekle.",
+                font=("Segoe UI", 12), text_color="#94a3b8",
+            ).pack(pady=(0, 10))
+            ctk.CTkButton(
+                bos, text="💰 İlk Gelirini Ekle", width=180, fg_color="#2e8b57",
+                command=self._hizli_gelir,
+            ).pack(pady=3)
+            ctk.CTkButton(
+                bos, text="💸 İlk Giderini Ekle", width=180, fg_color="#c0392b",
+                command=self._hizli_gider,
+            ).pack(pady=3)
+        elif not satirlar:
+            # Filtre var ama sonuç yok: eskiden bomboş tablo görünüyor,
+            # kullanıcı uygulamanın takıldığını sanıyordu
+            bos = ctk.CTkFrame(self._durum_kutusu, fg_color="transparent")
+            bos.pack(pady=16)
+            aciklama = (
+                f"'{arama_metni}' için sonuç yok"
+                if arama_metni
+                else "Bu filtreyle eşleşen işlem yok"
+            )
+            ctk.CTkLabel(
+                bos, text=f"🔍 {aciklama}",
+                font=("Segoe UI", 14, "bold"), text_color="#94a3b8",
+            ).pack(pady=(0, 8))
+            ctk.CTkButton(
+                bos, text="✖ Filtreyi Temizle", width=160,
+                fg_color="#475569", command=self._filtreyi_temizle,
+            ).pack()
+        elif len(satirlar) >= 200:
+            ctk.CTkLabel(
+                self._durum_kutusu,
+                text=(
+                    "⏳ En yeni 200 kayıt gösteriliyor — "
+                    "daralt için arama/filtre kullan"
+                ),
+                font=("Segoe UI", 10), text_color="#94a3b8",
+            ).pack(pady=(0, 4))
+
+    def _filtreyi_temizle(self):
+        """Arama metnini, tür ve dönem filtrelerini sıfırlar."""
+        try:
+            if hasattr(self, "arama_entry") and self.arama_entry.winfo_exists():
+                self.arama_entry.delete(0, "end")
+            if hasattr(self, "tur_filtre") and self.tur_filtre.winfo_exists():
+                self.tur_filtre.set("Tümü")
+        except Exception:
+            pass
+        self._donem_filtre = ""
+        self._tabloyu_doldur()

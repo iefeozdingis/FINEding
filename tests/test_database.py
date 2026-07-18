@@ -365,6 +365,29 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(len(self.db.tum_islemler()), 2)
         self.assertEqual(self.db.geri_al(), 0)
 
+    def test_islem_ara_donem_ve_arama_birlikte(self):
+        """Dönem filtresi aramayı yok saymamalı; ikisi birlikte uygulanmalı."""
+        from datetime import date, timedelta
+        bugun = date.today()
+        dun = bugun - timedelta(days=1)
+
+        self.db.gider_ekle(bugun.strftime("%d.%m.%Y"), "Market", "bugun kahve", 50)
+        self.db.gider_ekle(bugun.strftime("%d.%m.%Y"), "Market", "bugun ekmek", 20)
+        self.db.gider_ekle("01.01.2020", "Market", "eski kahve", 999)
+
+        # Yalnızca dönem
+        self.assertEqual(len(self.db.islem_ara(donem="bugun")), 2)
+        # Dönem + arama birlikte
+        sonuc = self.db.islem_ara("kahve", donem="bugun")
+        self.assertEqual(len(sonuc), 1)
+        self.assertEqual(sonuc[0][4], "bugun kahve")
+        # Dönemsiz arama eskiyi de bulmalı
+        self.assertEqual(len(self.db.islem_ara("kahve")), 2)
+        # Dönem + tür birlikte
+        self.assertEqual(len(self.db.islem_ara(tur="Gelir", donem="bugun")), 0)
+        # dun değişkeni hafta sınırında kullanılır
+        self.assertLessEqual(dun, bugun)
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)
