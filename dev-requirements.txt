@@ -3,3 +3,7 @@ mypy>=1.8,<2
 black>=24.0,<27
 isort>=5.12,<7
 flake8>=6.1,<8
+# mypy follow_imports=normal olunca scripts/parse_ci_yaml.py'deki yaml
+# importu "kurulu ama tipsiz" (import-untyped) hatası veriyor; bunu
+# ignore_missing_imports susturmuyor, tip taslağı gerekiyor.
+types-PyYAML>=6.0,<7
