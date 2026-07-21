@@ -363,8 +363,10 @@ class SifreDegistirPenceresi(ctk.CTkToplevel):
             messagebox.showerror("Hata", "Tüm alanları doldurun.")
             return
 
-        kullanici_adi = self.db.ayar_oku("aktif_kullanici_adi", "")
-        if not self.db.kullanici_dogrula(kullanici_adi, eski):
+        # Mevcut şifre doğrulaması SAYAÇ ARTIRMAYAN yolla yapılır; aksi halde
+        # kullanıcı kendi şifresini bilse de birkaç yanlış denemede giriş
+        # kilidine takılıyordu (kullanici_dogrula kilidi besliyor).
+        if not self.db.sifre_dogru_mu(eski):
             messagebox.showerror("Hata", "Mevcut şifre hatalı!")
             return
         if yeni != yeni2:

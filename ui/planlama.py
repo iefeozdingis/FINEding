@@ -406,31 +406,28 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         else:
             onceki_ay, onceki_yil = ay - 1, yil
 
-        onceki = self.db.planlanan_listele(onceki_ay, onceki_yil)
-        if not onceki:
+        # Kopyalama ATOMİK bir DB metodunda (planlanan_kopyala): sil+ekle
+        # tek transaction, yarıda kesilirse veri kaybı olmaz. Önce üzerine-yaz
+        # gerekip gerekmediğini kontrol için uzerine_yaz=False dener.
+        sonuc = self.db.planlanan_kopyala(onceki_ay, onceki_yil, ay, yil)
+        if sonuc["kopyalanan"] == 0:
             messagebox.showwarning(
                 "Uyarı", f"{onceki_ay:02d}.{onceki_yil} için plan bulunamadı."
             )
             return
-
-        mevcut = self.db.planlanan_listele(ay, yil)
-        if mevcut:
+        if sonuc["kopyalanan"] == -1:
+            # Hedef ayda plan var — onay iste, sonra üzerine yaz
             if not messagebox.askyesno(
                 "Uyarı", "Bu ay için zaten plan var. Üzerine yazılsın mı?"
             ):
                 return
-            for m in mevcut:
-                self.db.planlanan_sil(m[0])
-
-        eklenen = 0
-        for satir in onceki:
-            self.db.planlanan_ekle(
-                ay, yil, satir[3], satir[4], satir[5] or "", satir[6]
+            sonuc = self.db.planlanan_kopyala(
+                onceki_ay, onceki_yil, ay, yil, uzerine_yaz=True
             )
-            eklenen += 1
 
         messagebox.showinfo(
-            "Başarılı", f"{eklenen} plan kalemi {ay:02d}.{yil} ayına kopyalandı."
+            "Başarılı",
+            f"{sonuc['kopyalanan']} plan kalemi {ay:02d}.{yil} ayına kopyalandı.",
         )
         self._planlama_yenile()
 

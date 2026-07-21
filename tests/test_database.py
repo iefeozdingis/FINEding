@@ -589,6 +589,72 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(self.db.toplam_gelir(), 10000.0)
         self.assertEqual(self.db.toplam_gider(), 1250.50)
 
+    def test_planlanan_kopyala_atomik(self):
+        """Plan kopyalama atomik olmalı; üzerine yazma onay gerektirmeli."""
+        self.db.planlanan_ekle(6, 2026, "Maaş", "Gelir", "Haziran", 15000)
+        self.db.planlanan_ekle(6, 2026, "Kira", "Gider", "Ev", 5000)
+
+        # Hedef boşken kopyala
+        sonuc = self.db.planlanan_kopyala(6, 2026, 7, 2026)
+        self.assertEqual(sonuc["kopyalanan"], 2)
+        self.assertEqual(len(self.db.planlanan_listele(7, 2026)), 2)
+
+        # Hedef doluyken uzerine_yaz=False → -1 (çağıran onay istemeli), veri değişmez
+        sonuc2 = self.db.planlanan_kopyala(6, 2026, 7, 2026)
+        self.assertEqual(sonuc2["kopyalanan"], -1)
+        self.assertEqual(len(self.db.planlanan_listele(7, 2026)), 2)
+
+        # uzerine_yaz=True → eskiyi sil, yeniyi koy (net sonuç yine 2)
+        sonuc3 = self.db.planlanan_kopyala(6, 2026, 7, 2026, uzerine_yaz=True)
+        self.assertEqual(sonuc3["kopyalanan"], 2)
+        self.assertEqual(sonuc3["silinen"], 2)
+        self.assertEqual(len(self.db.planlanan_listele(7, 2026)), 2)
+
+        # Kaynak yokken
+        self.assertEqual(
+            self.db.planlanan_kopyala(1, 2020, 2, 2020)["kopyalanan"], 0
+        )
+
+    def test_tekrarlayan_yeni_kural_geriye_donuk_eklemez(self):
+        """Günü geçmiş yeni kural, bu ayı geriye dönük eklememeli (çift kayıt)."""
+        from datetime import date
+        bugun = date.today()
+        # Günü kesin geçmiş bir kural: gün=1 (ayın 2'sinden sonra her zaman geçmiş)
+        if bugun.day < 2:
+            self.skipTest("Ayın 1'inde bu senaryo test edilemez")
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 1)
+        eklenenler = self.db.tekrarlayan_isle(bugun)
+        # Yeni kural bu ayı geriye dönük EKLEMEMELİ
+        self.assertEqual(len(eklenenler), 0)
+        self.assertEqual(len(self.db.tum_islemler()), 0)
+
+    def test_tekrarlayan_gunu_gelmemis_kural_bu_ay_calisir(self):
+        """Günü henüz gelmemiş yeni kural, günü gelince bu ay çalışmalı."""
+        from datetime import date
+        bugun = date.today()
+        # Bugünden sonraki bir günü hedefle (bu ay henüz gelmemiş)
+        if bugun.day >= 28:
+            self.skipTest("Ay sonunda ileri gün seçilemez")
+        ileri_gun = bugun.day + 1
+        self.db.tekrarlayan_ekle("Gider", "Fatura", "Elektrik", 300, ileri_gun)
+        # Gün henüz gelmedi → bugün işlenince eklenmez
+        self.assertEqual(len(self.db.tekrarlayan_isle(bugun)), 0)
+        # Gün geldiğinde (o günü simüle et) → eklenir
+        gelecek = bugun.replace(day=ileri_gun)
+        self.assertEqual(len(self.db.tekrarlayan_isle(gelecek)), 1)
+
+    def test_sifre_dogru_mu_sayaci_artirmaz(self):
+        """Şifre doğrulama (değiştirme akışı) kilit sayacını beslememeli."""
+        # ayse ilk kayıt → id=1
+        self.db.kullanici_kaydet("ayse", "dogrusifre", "Ayşe")
+        self.db.oturum_ac(1)
+        # Yanlış şifreyi 6 kez doğrula → kilit TETİKLENMEMELİ
+        for _ in range(6):
+            self.assertFalse(self.db.sifre_dogru_mu("yanlis"))
+        self.assertEqual(self.db.giris_kilit_saniyesi("ayse"), 0)
+        # Doğru şifre True dönmeli
+        self.assertTrue(self.db.sifre_dogru_mu("dogrusifre"))
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)
@@ -960,7 +1026,9 @@ class DatabaseTests(unittest.TestCase):
     def test_tekrarlayan_isle_ilk_ay(self):
         """Günü gelmiş tekrarlayan işlem işlenmeli, gelmemiş beklemeli (#7)."""
         from datetime import date
-        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 1)
+        # Kural önceki ayda oluşturuldu (bugun=Haziran); Temmuz'da işlenmeli.
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 1,
+                                 bugun=date(2026, 6, 20))
         # Ayın 15'inde çalıştır — günü (1) geçmiş, eklenmeli
         eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 7, 15))
         self.assertEqual(len(eklenen), 1)
@@ -973,14 +1041,18 @@ class DatabaseTests(unittest.TestCase):
     def test_tekrarlayan_isle_gunu_gelmemis(self):
         """Günü henüz gelmemiş kural bu ay işlenmemeli (#7)."""
         from datetime import date
-        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 20)
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 20,
+                                 bugun=date(2026, 6, 25))
         eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 7, 5))
         self.assertEqual(len(eklenen), 0)
 
     def test_tekrarlayan_isle_kacan_aylar(self):
         """Uygulama aylarca kapalı kalırsa kaçan aylar telafi edilmeli (#7)."""
         from datetime import date
-        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 1)
+        # Kural Nisan'da oluşturuldu; Mayıs'ta ilk kez işlenir, sonra kaçan
+        # Haziran/Temmuz telafi edilir.
+        self.db.tekrarlayan_ekle("Gider", "Kira", "Ev", 5000, 1,
+                                 bugun=date(2026, 4, 20))
         self.db.tekrarlayan_isle(bugun=date(2026, 5, 10))
         # 3 ay sonra aç — Haziran ve Temmuz da eklenmeli
         eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 7, 10))
@@ -990,7 +1062,8 @@ class DatabaseTests(unittest.TestCase):
     def test_tekrarlayan_isle_ay_sonu(self):
         """31. günde tanımlı kural, Şubat'ta ayın son gününe kaymalı (#7)."""
         from datetime import date
-        self.db.tekrarlayan_ekle("Gider", "Fatura", "F", 100, 31)
+        self.db.tekrarlayan_ekle("Gider", "Fatura", "F", 100, 31,
+                                 bugun=date(2026, 1, 31))
         eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 2, 28))
         self.assertEqual(len(eklenen), 1)
         # 2026 Şubat 28 gün — tarih 2026-02-28 olmalı

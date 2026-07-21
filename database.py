@@ -1356,6 +1356,56 @@ class Database:
         )
         return self.cursor.fetchall()
 
+    def planlanan_kopyala(
+        self, kaynak_ay: int, kaynak_yil: int, hedef_ay: int, hedef_yil: int,
+        uzerine_yaz: bool = False,
+    ) -> Dict[str, int]:
+        """Bir ayın plan kalemlerini başka aya ATOMİK kopyalar.
+
+        Önceden bu mantık UI'daydı: mevcut kalemleri tek tek silip (ayrı
+        commit'ler) sonra yeniden ekliyordu. "Üzerine yaz" sırasında çökme
+        olursa hedef ay silinmiş ama kopya yarım kalmış olabiliyordu — hem
+        eski hem yeni plan kaybı. Artık tek transaction: ya hepsi ya hiçbiri.
+
+        Dönüş: {"kopyalanan": N, "silinen": M}. uzerine_yaz False iken hedef
+        ayda kalem varsa hiçbir şey yapmaz (kopyalanan=-1 ile işaretlenir).
+        """
+        uid = self.aktif_kullanici_id
+        # SELECT * → (id, ay, yil, kategori, tur, aciklama, tutar, ...)
+        self.cursor.execute(
+            "SELECT kategori, tur, aciklama, tutar FROM planlanan "
+            "WHERE ay=? AND yil=? AND kullanici_id=?",
+            (kaynak_ay, kaynak_yil, uid),
+        )
+        kaynak = self.cursor.fetchall()
+        if not kaynak:
+            return {"kopyalanan": 0, "silinen": 0}
+
+        self.cursor.execute(
+            "SELECT COUNT(*) FROM planlanan WHERE ay=? AND yil=? AND kullanici_id=?",
+            (hedef_ay, hedef_yil, uid),
+        )
+        hedef_dolu = self.cursor.fetchone()[0]
+        if hedef_dolu and not uzerine_yaz:
+            return {"kopyalanan": -1, "silinen": 0}  # çağıran onay istemeli
+
+        with self._transaction():
+            silinen = 0
+            if hedef_dolu:
+                self.cursor.execute(
+                    "DELETE FROM planlanan WHERE ay=? AND yil=? AND kullanici_id=?",
+                    (hedef_ay, hedef_yil, uid),
+                )
+                silinen = hedef_dolu
+            for kategori, tur, aciklama, tutar in kaynak:
+                self.cursor.execute(
+                    "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, "
+                    "tutar, kullanici_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (hedef_ay, hedef_yil, kategori, tur, aciklama or "",
+                     para_yuvarla(tutar), uid),
+                )
+        return {"kopyalanan": len(kaynak), "silinen": silinen}
+
     def plani_aktar(self, ay: int, yil: int, tarih: str) -> Dict[str, int]:
         """Aktarılmamış plan kalemlerini gerçek işlemlere çevirir.
 
@@ -1627,6 +1677,22 @@ class Database:
     # KULLANICI İŞLEMLERİ
     # ==========================
 
+    def sifre_dogru_mu(self, sifre: str, kullanici_id: Optional[int] = None) -> bool:
+        """Bir kullanıcının şifresini SAYAÇ ARTIRMADAN doğrular.
+
+        kullanici_dogrula (giriş) başarısızlıkta kalıcı kaba-kuvvet sayacını
+        artırır. Şifre DEĞİŞTİRME ekranında mevcut şifreyi doğrulamak için o
+        yol kullanılınca, kullanıcı kendi şifresini bilmesine rağmen birkaç
+        yanlış denemede giriş kilidine takılıyordu. Bu metot yalnızca doğrular,
+        yan etkisi yoktur. kullanici_id verilmezse aktif oturum kullanıcısı.
+        """
+        uid = self.aktif_kullanici_id if kullanici_id is None else kullanici_id
+        self.cursor.execute(
+            "SELECT sifre_hash FROM kullanicilar WHERE id=?", (uid,)
+        )
+        row = self.cursor.fetchone()
+        return bool(row) and _sifre_dogrula(sifre, row[0])
+
     def kullanici_dogrula(
         self, kullanici_adi: str, sifre: str
     ) -> Optional[Dict[str, Any]]:
@@ -1855,12 +1921,29 @@ class Database:
     # ==========================
 
     def tekrarlayan_ekle(
-        self, tur: str, kategori: str, aciklama: str, tutar: float, gun: int
+        self, tur: str, kategori: str, aciklama: str, tutar: float, gun: int,
+        bugun: Optional[Any] = None,
     ) -> None:
+        """Yeni tekrarlayan kural ekler.
+
+        Kuralın günü BU AY GEÇTİYSE, içinde bulunulan ayı 'işlenmiş' olarak
+        işaretleriz (son_islenen_donem). Aksi halde tekrarlayan_isle, yeni
+        kuralı geriye dönük bu-ay için hemen ekliyordu → kullanıcı o ayın
+        işlemini zaten elle girmişse çift kayıt oluşuyordu. Gün henüz
+        gelmediyse boş bırakılır ki kural bu ay, günü gelince çalışsın.
+
+        bugun: test/simülasyon için oluşturulma tarihi (varsayılan gerçek gün).
+        """
+        from datetime import date
+        if bugun is None:
+            bugun = date.today()
+        son_donem = ""
+        if bugun.day >= min(gun, self._ayin_son_gunu(bugun.year, bugun.month)):
+            son_donem = f"{bugun.year:04d}-{bugun.month:02d}"
         self.cursor.execute(
             "INSERT INTO tekrarlayan (tur, kategori, aciklama, tutar, gun, "
-            "kullanici_id) VALUES (?,?,?,?,?,?)",
-            (tur, kategori, aciklama, para_yuvarla(tutar), gun,
+            "son_islenen_donem, kullanici_id) VALUES (?,?,?,?,?,?,?)",
+            (tur, kategori, aciklama, para_yuvarla(tutar), gun, son_donem,
              self.aktif_kullanici_id),
         )
         self.conn.commit()
