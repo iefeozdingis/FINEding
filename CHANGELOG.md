@@ -3,7 +3,7 @@
 Tüm önemli değişiklikler bu dosyada tutulur. Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/)
 esas alır; sürümleme [Semantic Versioning](https://semver.org/lang/tr/).
 
-## [1.10.0] - 2026-07-23
+## [1.10.0] - 2026-07-28
 
 Otomatik kategori önerisi (#14). Test sayısı 132 → 140.
 
