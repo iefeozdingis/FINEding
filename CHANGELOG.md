@@ -3,6 +3,19 @@
 Tüm önemli değişiklikler bu dosyada tutulur. Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/)
 esas alır; sürümleme [Semantic Versioning](https://semver.org/lang/tr/).
 
+## [1.10.0] - 2026-07-23
+
+Otomatik kategori önerisi (#14). Test sayısı 132 → 140.
+
+### Eklendi
+
+- **Otomatik kategori önerisi.** İşlem eklerken açıklama alanına yazıldıkça,
+  geçmiş işlemlerde aynı/benzer açıklamaya en çok atanan kategori bir öneri
+  olarak gösterilir; tıklayınca kategori alanına uygulanır. Basit keyword
+  eşleştirme (LIKE) — ML gerektirmez, tek sorgu. Beraberlikte en son
+  kullanılan kategori kazanır; öneri türe (Gelir/Gider) ve kullanıcıya
+  özeldir (başka kullanıcının verisi sızmaz).
+
 ## [1.9.0] - 2026-07-23
 
 Çoklu para birimi desteği (#15). Test sayısı 117 → 132.
@@ -110,6 +123,7 @@ Kapsamlı bir denetim ve sağlamlaştırma turu. Test sayısı 61 → 107.
 
 - Hata düzeltmeleri ve kararlılık güncellemeleri.
 
+[1.10.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.10.0
 [1.9.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.9.0
 [1.8.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.8.0
 [1.7.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.7.0

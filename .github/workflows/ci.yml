@@ -34,8 +34,8 @@ jobs:
           KOSAN=$(grep -oP '^Ran \K[0-9]+' test-output.txt)
           ATLANAN=$(grep -oP 'skipped=\K[0-9]+' test-output.txt || echo 0)
           echo "Koşan: $KOSAN, atlanan: $ATLANAN"
-          if [ "${KOSAN:-0}" -lt 128 ]; then
-            echo "::error::Beklenenden az test koştu ($KOSAN < 128) — testler sessizce atlanmış olabilir"
+          if [ "${KOSAN:-0}" -lt 136 ]; then
+            echo "::error::Beklenenden az test koştu ($KOSAN < 136) — testler sessizce atlanmış olabilir"
             exit 1
           fi
           if [ "${ATLANAN:-0}" -gt 2 ]; then

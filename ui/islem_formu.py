@@ -73,6 +73,20 @@ class IslemFormuSayfasi(ctk.CTkFrame):
         )
         self.aciklama.pack(pady=8)
 
+        # Kategori önerisi: açıklama yazıldıkça geçmişe göre en olası kategori
+        # gösterilir; tıklayınca kategori alanına uygulanır. Slot her zaman
+        # paketli (boşken görünmez metin) — layout zıplamaz.
+        self._onerilen_kategori = None
+        self.oneri_btn = ctk.CTkButton(
+            form, text="", width=380, height=26, font=("Segoe UI", 12),
+            fg_color="transparent", hover_color=kart_renk, text_color=renk,
+            command=self._oneriyi_uygula, state="disabled",
+        )
+        self.oneri_btn.pack(pady=(0, 2))
+        self.aciklama.bind(
+            "<KeyRelease>", lambda e: self._kategori_oner_guncelle()
+        )
+
         self.tutar = ctk.CTkEntry(
             form, width=380, height=42, placeholder_text="Tutar",
             font=("Segoe UI", 14), corner_radius=10, border_color=renk,
@@ -119,6 +133,27 @@ class IslemFormuSayfasi(ctk.CTkFrame):
     def _kategori_listesi(self) -> list:
         # Birleştirme mantığı ui.utils.kategori_listesi'nde tek yerde
         return kategori_listesi(self.db, self.tur)
+
+    def _kategori_oner_guncelle(self):
+        """Açıklamaya göre kategori önerisini günceller (yazıldıkça)."""
+        oneri = self.db.kategori_oner(self.aciklama.get(), self.tur)
+        # Zaten seçili kategoriyi önermek gürültü; sadece farklıysa göster
+        if oneri and oneri != self.kategori.get():
+            self._onerilen_kategori = oneri
+            self.oneri_btn.configure(
+                text=f"💡 Önerilen kategori: {oneri}  —  uygula",
+                state="normal",
+            )
+        else:
+            self._onerilen_kategori = None
+            self.oneri_btn.configure(text="", state="disabled")
+
+    def _oneriyi_uygula(self):
+        """Önerilen kategoriyi kategori alanına yazar."""
+        if self._onerilen_kategori:
+            self.kategori.set(self._onerilen_kategori)
+            self._onerilen_kategori = None
+            self.oneri_btn.configure(text="", state="disabled")
 
     def _tl_onizle(self):
         """Yabancı para biriminde girilen tutarın TL karşılığını canlı gösterir."""
@@ -218,5 +253,7 @@ class IslemFormuSayfasi(ctk.CTkFrame):
         self.tutar.delete(0, "end")
         self.etiketler.delete(0, "end")
         self.tl_onizleme.configure(text="")
+        self._onerilen_kategori = None
+        self.oneri_btn.configure(text="", state="disabled")
         if self.dashboard_callback:
             self.dashboard_callback()

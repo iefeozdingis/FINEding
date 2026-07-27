@@ -2091,6 +2091,39 @@ class Database:
         mevcut = self.ayar_oku(anahtar, "") or ""
         return [k.strip() for k in mevcut.split(",") if k.strip()]
 
+    def kategori_oner(
+        self, aciklama: str, tur: Optional[str] = None
+    ) -> Optional[str]:
+        """Açıklamaya göre en olası kategoriyi önerir (basit keyword eşleştirme).
+
+        Geçmiş işlemler arasında aciklama'yı İÇEREN (LIKE) kayıtlarda en sık
+        kullanılan kategoriyi döner; ML yok, tek sorgu. Beraberlikte en son
+        kullanılan (MAX(id)) kazanır — kullanıcının güncel alışkanlığı öne
+        çıkar. Eşleşme yoksa veya açıklama çok kısaysa None.
+
+        tur verilirse yalnızca o türdeki (Gelir/Gider) işlemlere bakılır;
+        böylece aynı açıklama farklı türlerde farklı kategori önerebilir.
+        """
+        aciklama = (aciklama or "").strip()
+        if len(aciklama) < 2:
+            return None
+        # Kullanıcının yazdığı % ve _ joker olarak yorumlanmasın
+        kacisli = (
+            aciklama.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        sorgu = (
+            "SELECT kategori FROM islemler "
+            "WHERE kullanici_id=? AND aciklama LIKE ? ESCAPE '\\'"
+        )
+        params: List[Any] = [self.aktif_kullanici_id, f"%{kacisli}%"]
+        if tur:
+            sorgu += " AND tur=?"
+            params.append(tur)
+        sorgu += " GROUP BY kategori ORDER BY COUNT(*) DESC, MAX(id) DESC LIMIT 1"
+        self.cursor.execute(sorgu, tuple(params))
+        row = self.cursor.fetchone()
+        return row[0] if row else None
+
     # ==========================
     # TEKRARLAYAN İŞLEMLER
     # ==========================

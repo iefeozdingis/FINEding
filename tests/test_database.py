@@ -1485,5 +1485,68 @@ class CokluParaTests(unittest.TestCase):
             db_module.DB_PATH = onceki
 
 
+class KategoriOneriTests(unittest.TestCase):
+    """#14: açıklamaya göre geçmişten en olası kategoriyi öner (LIKE, tek sorgu)."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        db_module.DB_FOLDER = Path(self.temp_dir.name)
+        db_module.DB_PATH = db_module.DB_FOLDER / "test_oneri.db"
+        self.db = db_module.Database()
+
+    def tearDown(self):
+        self.db.close()
+        self.temp_dir.cleanup()
+
+    def test_en_sik_kategori(self):
+        self.db.gider_ekle("01.01.2026", "Market", "Migros alışveriş", 100)
+        self.db.gider_ekle("02.01.2026", "Market", "Migros gıda", 120)
+        self.db.gider_ekle("03.01.2026", "Eğlence", "Migros sinema bileti", 50)
+        # "Migros" 3 kez; Market 2, Eğlence 1 → Market önerilir
+        self.assertEqual(self.db.kategori_oner("Migros"), "Market")
+
+    def test_kismi_eslesme(self):
+        self.db.gider_ekle("01.01.2026", "Ulaşım", "Benzin Shell", 500)
+        # Alt dize eşleşir
+        self.assertEqual(self.db.kategori_oner("shell"), "Ulaşım")
+
+    def test_beraberlikte_en_son_kazanir(self):
+        self.db.gider_ekle("01.01.2026", "Market", "kahve", 50)
+        self.db.gider_ekle("02.01.2026", "Kafe", "kahve", 60)
+        # 1-1 beraberlik → en son eklenen (Kafe) kazanır
+        self.assertEqual(self.db.kategori_oner("kahve"), "Kafe")
+
+    def test_tur_filtresi(self):
+        self.db.gelir_ekle("01.01.2026", "Maaş", "transfer", 5000)
+        self.db.gider_ekle("02.01.2026", "Kira", "transfer", 3000)
+        self.assertEqual(self.db.kategori_oner("transfer", "Gelir"), "Maaş")
+        self.assertEqual(self.db.kategori_oner("transfer", "Gider"), "Kira")
+
+    def test_eslesme_yoksa_none(self):
+        self.db.gider_ekle("01.01.2026", "Market", "Migros", 100)
+        self.assertIsNone(self.db.kategori_oner("uçak bileti"))
+
+    def test_cok_kisa_aciklama_none(self):
+        self.db.gider_ekle("01.01.2026", "Market", "a", 100)
+        self.assertIsNone(self.db.kategori_oner("a"))   # < 2 karakter
+        self.assertIsNone(self.db.kategori_oner(""))
+
+    def test_joker_karakter_kacisi(self):
+        # '%' düz metin olarak eşleşmeli (joker değil)
+        self.db.gider_ekle("01.01.2026", "İndirim", "%50 kampanya", 100)
+        self.db.gider_ekle("02.01.2026", "Market", "normal alışveriş", 100)
+        self.assertEqual(self.db.kategori_oner("%50"), "İndirim")
+
+    def test_kullanici_izolasyonu(self):
+        self.db.kullanici_kaydet("admin", "sifre123", "Admin")   # id=1
+        self.db.kullanici_kaydet("ayse", "sifre123", "Ayşe")     # id=2
+        self.db.oturum_ac(1)
+        self.db.gider_ekle("01.01.2026", "Market", "Migros", 100)
+        self.assertEqual(self.db.kategori_oner("Migros"), "Market")
+        # Başka kullanıcının işlemi önerilmez (veri izolasyonu)
+        self.db.oturum_ac(2)
+        self.assertIsNone(self.db.kategori_oner("Migros"))
+
+
 if __name__ == "__main__":
     unittest.main()
